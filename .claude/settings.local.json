@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git ls-tree *)",
+      "Bash(python3 *)",
+      "Bash(pip install *)",
+      "Bash(node -e ' *)",
+      "Bash(cd /tmp)",
+      "Bash(npm install *)",
+      "Bash(npm --version)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias=\"@/*\" --yes)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --eslint --app --no-src-dir --import-alias=\"@/*\" --yes --force)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(npx next *)",
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\" http://localhost:3000)",
+      "Bash(start *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\Andy.Li\\\\Desktop\\\\Work\\\\SatVisual\\\\github\\\\satellite-data-visual\\\\.claude\\\\commands\")",
+      "Bash(cp \"C:\\\\Users\\\\Andy.Li\\\\Desktop\\\\Work\\\\SatVisual\\\\github\\\\satellite-data-visual\\\\Skill.md\" \"C:\\\\Users\\\\Andy.Li\\\\Desktop\\\\Work\\\\SatVisual\\\\github\\\\satellite-data-visual\\\\.claude\\\\commands\\\\frontend-design.md\")",
+      "Bash(curl -s \"http://localhost:3002\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(curl *)"
+    ]
+  }
+}
