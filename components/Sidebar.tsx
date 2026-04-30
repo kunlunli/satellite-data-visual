@@ -1,6 +1,6 @@
 'use client'
 
-export type View = 'dashboard' | 'motor' | 'azimuth' | 'elevation' | 'pae' | 'rssi'
+export type View = 'dashboard' | 'azel' | 'pae' | 'rssi'
 
 interface NavItem {
   id: View
@@ -20,35 +20,12 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    id: 'motor',
-    label: 'Motor Angles',
-    icon: (
-      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <circle cx="12" cy="12" r="3" />
-        <path strokeLinecap="round" strokeLinejoin="round"
-          d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-      </svg>
-    ),
-  },
-  {
-    id: 'azimuth',
-    label: 'Azimuth',
+    id: 'azel',
+    label: 'AZ / EL',
     icon: (
       <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <circle cx="12" cy="12" r="9" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 3l1.5 5.5L12 10l-1.5-1.5L12 3z" fill="currentColor" stroke="none" />
-        <line x1="12" y1="12" x2="12" y2="3" />
-        <line x1="3" y1="12" x2="21" y2="12" strokeOpacity="0.4" />
-      </svg>
-    ),
-  },
-  {
-    id: 'elevation',
-    label: 'Elevation',
-    icon: (
-      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3 20L12 5l9 15" />
-        <line x1="3" y1="20" x2="21" y2="20" />
+        <path strokeLinecap="round" d="M12 3v4M12 17v4M3 12h4M17 12h4" />
       </svg>
     ),
   },
@@ -106,9 +83,7 @@ export default function Sidebar({ activeView, onViewChange, fileName, hasData, o
           <line x1="3" y1="12" x2="8" y2="12" />
           <line x1="16" y1="12" x2="21" y2="12" />
         </svg>
-        <span className="sidebar-logo-text">
-          SAT<span style={{ color: 'var(--amber)' }}>VIS</span>
-        </span>
+        <span className="sidebar-logo-text">Intellian</span>
       </div>
 
       {/* Navigation */}

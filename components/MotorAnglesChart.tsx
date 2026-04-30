@@ -46,19 +46,19 @@ export default function MotorAnglesChart({ data, currentIndex }: Props) {
             type="number"
             domain={['dataMin', 'dataMax']}
             tickFormatter={formatFlightTime}
-            tick={{ fontSize: 9 }}
-            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 11 }}
+            tick={{ fontSize: 13 }}
+            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
           />
           <YAxis
             domain={['auto', 'auto']}
-            tick={{ fontSize: 10 }}
-            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 11 }}
+            tick={{ fontSize: 13 }}
+            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
           />
           <Tooltip
             labelFormatter={(v) => formatFlightTime(Number(v))}
             formatter={(v: number, name: string) => [v.toFixed(3) + '°', name]}
           />
-          <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 11 }} />
+          <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 13 }} />
           <Line type="monotone" dataKey="jointX" name="Joint X" stroke="#f97316" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <Line type="monotone" dataKey="jointY" name="Joint Y" stroke="#3b82f6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <ReferenceLine x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />

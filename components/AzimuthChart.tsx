@@ -32,13 +32,13 @@ export default function AzimuthChart({ data, currentIndex, height = 200 }: Props
         <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 24, left: 32 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']}
-            tickFormatter={formatFlightTime} tick={{ fontSize: 9 }}
-            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 11 }} />
-          <YAxis domain={['auto', 'auto']} tick={{ fontSize: 10 }}
-            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 11 }} />
+            tickFormatter={formatFlightTime} tick={{ fontSize: 13 }}
+            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }} />
+          <YAxis domain={['auto', 'auto']} tick={{ fontSize: 13 }}
+            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }} />
           <Tooltip labelFormatter={(v) => formatFlightTime(Number(v))}
             formatter={(v: number, name: string) => [v.toFixed(3) + '°', name]} />
-          <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 11 }} />
+          <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 13 }} />
           <Line type="monotone" dataKey="cur" name="Current AZ" stroke="#3b82f6" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <Line type="monotone" dataKey="target" name="Target AZ" stroke="#f97316" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <ReferenceLine x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
