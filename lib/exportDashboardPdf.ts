@@ -201,7 +201,7 @@ export async function exportDashboardPdf({
   const { jsPDF } = await import('jspdf')
 
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-  pdf.setDisplayMode('fullpage', 'single', 'UseNone')
+  pdf.setDisplayMode('fullpage', 'single', null)
   const pageW = pdf.internal.pageSize.getWidth()
   const pageH = pdf.internal.pageSize.getHeight()
   const margin = 2.5
