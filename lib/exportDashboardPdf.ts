@@ -100,8 +100,9 @@ async function trySvg2PdfPage(
 ): Promise<boolean> {
   try {
     const mod = await import('svg2pdf.js')
-    const svg2pdf = (mod as { svg2pdf?: (s: SVGSVGElement, p: unknown, o: object) => Promise<void> | void })
-      .svg2pdf ?? (mod as { default?: (s: SVGSVGElement, p: unknown, o: object) => Promise<void> | void }).default
+    type Svg2PdfFn = (s: SVGSVGElement, p: unknown, o: object) => Promise<unknown> | void
+    const anyMod = mod as unknown as Record<string, unknown>
+    const svg2pdf = (anyMod['svg2pdf'] ?? anyMod['default']) as Svg2PdfFn | undefined
     if (typeof svg2pdf !== 'function') return false
 
     const rawSvgs = [...chartsRoot.querySelectorAll('svg')] as SVGSVGElement[]
@@ -176,7 +177,7 @@ async function trySvg2PdfPage(
       if (!clone.getAttribute('height')) clone.setAttribute('height', String(r.height))
       inlineSvgStyles(svg, clone)
       const out = svg2pdf(clone, pdf, { x: xMm, y: yMm, width: sw, height: sh })
-      if (out && typeof (out as Promise<void>).then === 'function') await out
+      if (out && typeof (out as Promise<unknown>).then === 'function') await out
     }
     return true
   } catch (e) {
