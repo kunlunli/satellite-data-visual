@@ -6,6 +6,9 @@ import {
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
+import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
+import { ZoomControls } from '@/components/ZoomControls'
+import { ZoomScrollbar } from '@/components/ZoomScrollbar'
 
 interface Props {
   data: SatelliteDataRow[]
@@ -96,14 +99,34 @@ function buildScatterSeries(
 }
 
 function TrackingPathChartInner({ data, currentIndex, height = 240, compactExport = false }: Props) {
-  const actualData = useMemo(
+  const azDomain = useMemo<[number, number]>(() => {
+    if (data.length === 0) return [0, 360]
+    let minAz = Infinity
+    let maxAz = -Infinity
+    for (const r of data) {
+      if (r.cur_az < minAz) minAz = r.cur_az
+      if (r.target_az < minAz) minAz = r.target_az
+      if (r.cur_az > maxAz) maxAz = r.cur_az
+      if (r.target_az > maxAz) maxAz = r.target_az
+    }
+    const range = maxAz - minAz
+    const pad = Math.max(range * 0.05, 1)
+    return [minAz - pad, maxAz + pad]
+  }, [data])
+  // chartMargin (non-export) = { top: 4, right: 16, bottom: 28, left: 32 } + left Y-axis ~60px
+  const pathPlotBounds: PlotBounds = { left: 32 + 60, right: 16, top: 4, bottom: 28 }
+  const { domain: zoomAzDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(azDomain, compactExport ? undefined : pathPlotBounds)
+
+  const allActualData = useMemo(
     () => buildScatterSeries(data, (r) => ({ az: r.cur_az, el: r.cur_el })),
     [data],
   )
-  const targetData = useMemo(
+  const allTargetData = useMemo(
     () => buildScatterSeries(data, (r) => ({ az: r.target_az, el: r.target_el })),
     [data],
   )
+  const actualData = allActualData
+  const targetData = allTargetData
   const elevationDomain = useMemo<[number, number]>(() => {
     if (data.length === 0) return [0, 1]
 
@@ -130,11 +153,11 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
     : { top: 4, right: 16, bottom: 28, left: 32 }
 
   return (
-    <div className={`bg-white rounded-lg shadow-sm ${compactExport ? 'p-1 pdf-path-chart' : 'p-3 flex flex-col'}`}>
+    <div className={`relative bg-white rounded-lg shadow-sm ${compactExport ? 'p-1 pdf-path-chart' : 'p-3 flex flex-col'}`}>
       <h2 className={`font-semibold text-gray-600 text-center ${compactExport ? 'text-[10px] mb-1' : 'text-xs mb-2'}`}>
         Tracking Path (AZ / EL)
       </h2>
-      <div className={compactExport ? undefined : 'flex-1 min-h-0'}>
+      <div ref={compactExport ? undefined : containerRef} className={compactExport ? undefined : 'flex-1 min-h-0'}>
       <ResponsiveContainer width="100%" height={compactExport ? height : '100%'} className={compactExport ? 'pdf-recharts-fill' : undefined}>
         <ScatterChart margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -142,8 +165,10 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
             dataKey="az"
             type="number"
             name="Azimuth"
-            domain={['auto', 'auto']}
+            domain={compactExport ? ['auto', 'auto'] : zoomAzDomain}
+            allowDataOverflow={!compactExport}
             padding={compactExport ? { left: 10, right: 28 } : undefined}
+            tickFormatter={(v: number) => v.toFixed(2)}
             tick={{ fontSize: 13 }}
             label={{ value: 'Azimuth (deg)', position: 'insideBottom', offset: -14, fontSize: 14 }}
           />
@@ -153,6 +178,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
             name="Elevation"
             domain={elevationDomain}
             padding={compactExport ? { top: 8, bottom: 8 } : undefined}
+            tickFormatter={(v: number) => v.toFixed(2)}
             tick={{ fontSize: 13 }}
             label={{ value: 'Elevation (deg)', angle: 0, position: 'insideTopLeft', fontSize: 12, dy: 20, dx: 4 }}
           />
@@ -194,6 +220,16 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
         </ScatterChart>
       </ResponsiveContainer>
       </div>
+      {!compactExport && isZoomed && (
+        <ZoomScrollbar
+          fullDomain={azDomain}
+          visibleDomain={zoomAzDomain}
+          onPan={pan}
+          leftPad={pathPlotBounds.left}
+          rightPad={pathPlotBounds.right}
+        />
+      )}
+      {!compactExport && <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />}
     </div>
   )
 }

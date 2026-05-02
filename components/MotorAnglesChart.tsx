@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useCallback } from 'react'
 import {
   LineChart,
   Line,
@@ -14,6 +14,8 @@ import {
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
+import { useTimezone } from '@/lib/timezoneContext'
+import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 
 interface Props {
   data: SatelliteDataRow[]
@@ -23,6 +25,10 @@ interface Props {
 const SAMPLE = 4
 
 export default function MotorAnglesChart({ data, currentIndex }: Props) {
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+
   const chartData = useMemo(
     () =>
       data
@@ -45,7 +51,7 @@ export default function MotorAnglesChart({ data, currentIndex }: Props) {
             dataKey="t"
             type="number"
             domain={['dataMin', 'dataMax']}
-            tickFormatter={formatFlightTime}
+            tickFormatter={fmtTick}
             tick={{ fontSize: 13 }}
             label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
           />
@@ -55,7 +61,7 @@ export default function MotorAnglesChart({ data, currentIndex }: Props) {
             label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
           />
           <Tooltip
-            labelFormatter={(v) => formatFlightTime(Number(v))}
+            labelFormatter={(v) => fmtTooltip(Number(v))}
             formatter={(v: number, name: string) => [v.toFixed(3) + '°', name]}
           />
           <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 13 }} />

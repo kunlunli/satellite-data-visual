@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useCallback } from 'react'
 import {
   LineChart,
   Line,
@@ -15,12 +15,19 @@ import {
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
+import { useTimezone } from '@/lib/timezoneContext'
+import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 import {
   SYNCED_TIME_CHART_MARGIN,
   SYNCED_LEFT_Y_AXIS_WIDTH,
+  SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
+  sliceByTime,
 } from '@/lib/timeSeriesChartLayout'
 import { SyncPadRightYAxis } from '@/components/SyncPadRightYAxis'
+import { useChartZoom } from '@/lib/useChartZoom'
+import { ZoomControls } from '@/components/ZoomControls'
+import { ZoomScrollbar } from '@/components/ZoomScrollbar'
 
 interface Props {
   data: SatelliteDataRow[]
@@ -32,36 +39,39 @@ interface Props {
 const SAMPLE = 4
 
 function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading = true }: Props) {
-  const chartData = useMemo(
-    () =>
-      data
-        .filter((_, i) => i % SAMPLE === 0)
-        .map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, SYNCED_CHART_PLOT_BOUNDS)
+
+  const allChartData = useMemo(
+    () => data.filter((_, i) => i % SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
     [data],
   )
-
-  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
 
   return (
-    <div className="bg-white rounded-lg p-3 shadow-sm">
+    <div className="relative bg-white rounded-lg p-3 shadow-sm">
       {showHeading ? (
         <h2 className="text-xs font-semibold text-gray-600 text-center mb-2">
           Pointing Accuracy Error (deg)
         </h2>
       ) : null}
+      <div ref={containerRef}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={{ ...SYNCED_TIME_CHART_MARGIN }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
           <XAxis
             dataKey="t"
             type="number"
-            domain={timeDomain}
+            domain={zoomDomain}
             allowDataOverflow
-            tickFormatter={formatFlightTime}
+            tickFormatter={fmtTick}
             tick={{ fontSize: 13 }}
             label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
           />
@@ -70,12 +80,13 @@ function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading
             orientation="left"
             width={SYNCED_LEFT_Y_AXIS_WIDTH}
             domain={['auto', 'auto']}
+            tickFormatter={(v: number) => v.toFixed(2)}
             tick={{ fontSize: 13 }}
             label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
           />
           <SyncPadRightYAxis />
           <Tooltip
-            labelFormatter={(v) => formatFlightTime(Number(v))}
+            labelFormatter={(v) => fmtTooltip(Number(v))}
             formatter={(v: number, name: string) => [v.toFixed(4) + '°', name]}
           />
           <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 13 }} />
@@ -108,6 +119,17 @@ function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading
           )}
         </LineChart>
       </ResponsiveContainer>
+      </div>
+      {isZoomed && (
+        <ZoomScrollbar
+          fullDomain={timeDomain}
+          visibleDomain={zoomDomain}
+          onPan={pan}
+          leftPad={SYNCED_CHART_PLOT_BOUNDS.left}
+          rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
+        />
+      )}
+      <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }

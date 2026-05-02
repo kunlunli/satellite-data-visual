@@ -1014,3 +1014,206 @@ body {
   color: color-mix(in srgb, var(--text-mid) 88%, white 12%);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
+
+/* ── Timezone picker button ───────────────────────────────────────── */
+
+.header-tz-btn {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 68%, white 32%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+  color: var(--text-mid);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+  white-space: nowrap;
+}
+
+.header-tz-btn:hover {
+  border-color: color-mix(in srgb, var(--steel-mid) 50%, white 50%);
+  color: var(--text-bright);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
+}
+
+.header-tz-btn.active {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--steel-mid) 55%);
+  background: linear-gradient(180deg, rgba(255, 143, 0, 0.16), rgba(255, 143, 0, 0.06));
+}
+
+.header-tz-btn.active:hover {
+  border-color: color-mix(in srgb, var(--amber) 65%, white 35%);
+  background: linear-gradient(180deg, rgba(255, 143, 0, 0.24), rgba(255, 143, 0, 0.1));
+}
+
+/* ── Timezone picker modal ────────────────────────────────────────── */
+
+.tz-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(7, 8, 10, 0.75);
+  backdrop-filter: blur(5px);
+}
+
+.tz-modal {
+  width: min(380px, 100%);
+  max-height: min(560px, 90vh);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 70%, white 30%);
+  background: color-mix(in srgb, var(--panel) 92%, #0f172a 8%);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  padding: 18px 18px 14px;
+  gap: 12px;
+}
+
+.tz-modal-title {
+  margin: 0;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-bright);
+  letter-spacing: 0.02em;
+}
+
+.tz-special-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tz-special-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 68%, white 32%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--text-mid);
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.tz-special-btn:hover {
+  border-color: color-mix(in srgb, var(--steel-mid) 50%, white 50%);
+  color: var(--text-bright);
+}
+
+.tz-special-btn.selected {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 55%, white 45%);
+  background: linear-gradient(180deg, rgba(255, 143, 0, 0.2), rgba(255, 143, 0, 0.08));
+}
+
+.tz-special-sub {
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.tz-special-btn.selected .tz-special-sub {
+  color: color-mix(in srgb, var(--amber) 60%, var(--text-dim) 40%);
+}
+
+.tz-search {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 75%, white 25%);
+  background: color-mix(in srgb, var(--void) 40%, var(--panel) 60%);
+  color: var(--text-bright);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.tz-search:focus {
+  border-color: color-mix(in srgb, var(--amber) 55%, white 45%);
+}
+
+.tz-search::placeholder {
+  color: var(--text-dim);
+}
+
+.tz-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--steel-bright) transparent;
+}
+
+.tz-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.tz-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tz-list::-webkit-scrollbar-thumb {
+  background: var(--steel-bright);
+  border-radius: 3px;
+}
+
+.tz-option {
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-mid);
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+  white-space: nowrap;
+}
+
+.tz-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-bright);
+}
+
+.tz-option.selected {
+  color: var(--amber);
+  border-color: color-mix(in srgb, var(--amber) 40%, transparent 60%);
+  background: rgba(255, 143, 0, 0.1);
+}
+
+.tz-empty {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 16px 0;
+  margin: 0;
+}

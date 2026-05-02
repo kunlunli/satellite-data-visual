@@ -8,11 +8,14 @@ import SkyPlot from './SkyPlot'
 import TrackingErrorChart from './TrackingErrorChart'
 import AzElPositionChart from './AzElPositionChart'
 import RssiChart from './RssiChart'
+import { TimezonePicker } from './TimezonePicker'
 import type { SatelliteDataRow } from '@/lib/types'
 import { parseLogFile, formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
 import { exportDashboardPdf } from '@/lib/exportDashboardPdf'
 import DashboardPdfSnapshot from '@/components/DashboardPdfSnapshot'
+import { TimezoneContext } from '@/lib/timezoneContext'
+import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 
 export default function Dashboard() {
   const [data, setData] = useState<SatelliteDataRow[]>([])
@@ -41,12 +44,16 @@ export default function Dashboard() {
   const [pdfFrameStart, setPdfFrameStart] = useState('1')
   const [pdfFrameEnd, setPdfFrameEnd] = useState('1')
   const [pdfRangeError, setPdfRangeError] = useState('')
+  const [timezone, setTimezone] = useState<string | null>(null)
+
+  const t0Us = useMemo(() => (data.length > 0 ? data[0].timestamp : 0), [data])
+  const tzCtx = useMemo(() => ({ timezone, t0Us }), [timezone, t0Us])
 
   const openPdfRangeModal = useCallback(() => {
     if (data.length === 0) return
     const n = data.length
     setPdfFrameStart('1')
-    setPdfFrameEnd(String(n))
+    setPdfFrameEnd(String(Math.min(n, 20)))
     setPdfRangeError('')
     setPdfRangeModalOpen(true)
   }, [data])
@@ -222,6 +229,7 @@ export default function Dashboard() {
   }, [activeView])
 
   return (
+    <TimezoneContext.Provider value={tzCtx}>
     <div className="h-screen flex flex-col">
       {pdfExporting && (
         <div className="pdf-export-overlay" role="status" aria-live="polite">
@@ -327,7 +335,10 @@ export default function Dashboard() {
         <div className="flex flex-1 justify-center">
           <span className="header-wordmark">Intellian</span>
         </div>
-        <div className="flex w-40 shrink-0 justify-end md:w-48">
+        <div className="flex w-40 shrink-0 items-center justify-end gap-2 md:w-48">
+          {hasData && (
+            <TimezonePicker timezone={timezone} onSelect={setTimezone} />
+          )}
           {hasData && (
             <button
               type="button"
@@ -501,6 +512,7 @@ export default function Dashboard() {
         </main>
       </div>
     </div>
+    </TimezoneContext.Provider>
   )
 }
 
@@ -590,6 +602,11 @@ import {
   LineChart, Line, ReferenceLine,
   ReferenceDot,
 } from 'recharts'
+import { getFlightTimeDomain, sliceByTime } from '@/lib/timeSeriesChartLayout'
+import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
+import { ZoomControls } from '@/components/ZoomControls'
+import { ZoomScrollbar } from '@/components/ZoomScrollbar'
+import { useTimezone } from '@/lib/timezoneContext'
 
 interface CP { data: SatelliteDataRow[]; currentIndex: number }
 
@@ -597,27 +614,40 @@ const FULL_SAMPLE = 4
 
 const FULL_MARGIN = { top: 12, right: 24, bottom: 32, left: 40 }
 
+// FULL_MARGIN + default Recharts YAxis width (60px), no right axis
+const FULL_PLOT_BOUNDS: PlotBounds = {
+  left: FULL_MARGIN.left + 60,
+  right: FULL_MARGIN.right,
+  top: FULL_MARGIN.top,
+  bottom: FULL_MARGIN.bottom,
+}
+
 function PaeFull({ data, currentIndex }: CP) {
-  const chartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0)
-      .map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const allChartData = useMemo(
+    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
     [data],
   )
+  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
-      <div className="min-h-0 w-full flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
+      <div ref={containerRef} className="min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']}
-              tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
+            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+            <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fontSize: 11 }}
               label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            <Tooltip labelFormatter={(v) => formatFlightTime(Number(v))}
+            <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [v.toFixed(4) + '°', name]} />
             <Legend verticalAlign="top" />
             <Line type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
@@ -632,30 +662,46 @@ function PaeFull({ data, currentIndex }: CP) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {isZoomed && (
+        <ZoomScrollbar
+          className="shrink-0"
+          fullDomain={timeDomain}
+          visibleDomain={zoomDomain}
+          onPan={pan}
+          leftPad={FULL_PLOT_BOUNDS.left}
+          rightPad={FULL_PLOT_BOUNDS.right}
+        />
+      )}
+      <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }
 
 function RssiFull({ data, currentIndex }: CP) {
-  const chartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0)
-      .map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const allChartData = useMemo(
+    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
     [data],
   )
+  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentRssi = data[currentIndex]?.rssi
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
-      <div className="min-h-0 w-full flex-1">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
+      <div ref={containerRef} className="min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']}
-              tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
+            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+            <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fontSize: 11 }}
               label={{ value: 'RSSI', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            <Tooltip labelFormatter={(v) => formatFlightTime(Number(v))}
+            <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number) => [v.toFixed(1), 'RSSI']} />
             <Line type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
             <ReferenceLine x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -665,6 +711,17 @@ function RssiFull({ data, currentIndex }: CP) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {isZoomed && (
+        <ZoomScrollbar
+          className="shrink-0"
+          fullDomain={timeDomain}
+          visibleDomain={zoomDomain}
+          onPan={pan}
+          leftPad={FULL_PLOT_BOUNDS.left}
+          rightPad={FULL_PLOT_BOUNDS.right}
+        />
+      )}
+      <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useCallback } from 'react'
 import {
   LineChart,
   Line,
@@ -15,12 +15,19 @@ import {
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
+import { useTimezone } from '@/lib/timezoneContext'
+import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 import {
   SYNCED_TIME_CHART_MARGIN,
   SYNCED_LEFT_Y_AXIS_WIDTH,
   SYNCED_RIGHT_Y_AXIS_WIDTH,
+  SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
+  sliceByTime,
 } from '@/lib/timeSeriesChartLayout'
+import { useChartZoom } from '@/lib/useChartZoom'
+import { ZoomControls } from '@/components/ZoomControls'
+import { ZoomScrollbar } from '@/components/ZoomScrollbar'
 
 interface Props {
   data: SatelliteDataRow[]
@@ -42,15 +49,17 @@ function AzElPositionChartInner({
   fill = false,
   showHeading = true,
 }: Props) {
-  const chartData = useMemo(
-    () =>
-      data
-        .filter((_, i) => i % SAMPLE === 0)
-        .map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, SYNCED_CHART_PLOT_BOUNDS)
+
+  const allChartData = useMemo(
+    () => data.filter((_, i) => i % SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
     [data],
   )
-
-  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentAz = data[currentIndex]?.cur_az
@@ -64,9 +73,9 @@ function AzElPositionChartInner({
       <XAxis
         dataKey="t"
         type="number"
-        domain={timeDomain}
+        domain={zoomDomain}
         allowDataOverflow
-        tickFormatter={formatFlightTime}
+        tickFormatter={fmtTick}
         tick={{ fontSize: 13 }}
         label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
       />
@@ -75,6 +84,7 @@ function AzElPositionChartInner({
         orientation="left"
         width={SYNCED_LEFT_Y_AXIS_WIDTH}
         domain={['auto', 'auto']}
+        tickFormatter={(v: number) => v.toFixed(2)}
         tick={{ fontSize: 13 }}
         label={{ value: 'Azimuth (°)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 14 }}
       />
@@ -83,11 +93,12 @@ function AzElPositionChartInner({
         orientation="right"
         width={SYNCED_RIGHT_Y_AXIS_WIDTH}
         domain={['auto', 'auto']}
+        tickFormatter={(v: number) => v.toFixed(2)}
         tick={{ fontSize: 13 }}
         label={{ value: 'Elevation (°)', angle: 90, position: 'insideRight', offset: 10, fontSize: 14 }}
       />
       <Tooltip
-        labelFormatter={(v) => formatFlightTime(Number(v))}
+        labelFormatter={(v) => fmtTooltip(Number(v))}
         formatter={(v: number, name: string) => [`${v.toFixed(3)}°`, name]}
       />
       <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 13 }} />
@@ -149,31 +160,54 @@ function AzElPositionChartInner({
 
   if (fill) {
     return (
-      <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white p-3 shadow-sm">
+      <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white p-3 shadow-sm">
         {showHeading && (
           <h2 className="mb-1 shrink-0 text-center text-xs font-semibold text-gray-600">
             Azimuth &amp; Elevation vs Time
           </h2>
         )}
-        <div className={`min-h-0 w-full flex-1 ${showHeading ? '' : 'pt-1'}`}>
+        <div ref={containerRef} className={`min-h-0 w-full flex-1 ${showHeading ? '' : 'pt-1'}`}>
           <ResponsiveContainer width="100%" height="100%">
             {chart}
           </ResponsiveContainer>
         </div>
+        {isZoomed && (
+          <ZoomScrollbar
+            className="shrink-0"
+            fullDomain={timeDomain}
+            visibleDomain={zoomDomain}
+            onPan={pan}
+            leftPad={SYNCED_CHART_PLOT_BOUNDS.left}
+            rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
+          />
+        )}
+        <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
       </div>
     )
   }
 
   return (
-    <div className="rounded-lg bg-white p-3 shadow-sm">
+    <div className="relative rounded-lg bg-white p-3 shadow-sm">
       {showHeading && (
         <h2 className="mb-2 text-center text-xs font-semibold text-gray-600">
           Azimuth &amp; Elevation vs Time
         </h2>
       )}
-      <ResponsiveContainer width="100%" height={height}>
-        {chart}
-      </ResponsiveContainer>
+      <div ref={containerRef}>
+        <ResponsiveContainer width="100%" height={height}>
+          {chart}
+        </ResponsiveContainer>
+      </div>
+      {isZoomed && (
+        <ZoomScrollbar
+          fullDomain={timeDomain}
+          visibleDomain={zoomDomain}
+          onPan={pan}
+          leftPad={SYNCED_CHART_PLOT_BOUNDS.left}
+          rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
+        />
+      )}
+      <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }
