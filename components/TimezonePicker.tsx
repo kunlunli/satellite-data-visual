@@ -52,16 +52,12 @@ interface Props {
 export function TimezonePicker({ timezone, onSelect }: Props) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [dropPos, setDropPos] = useState<{ top: number; right: number } | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const localTz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
-
-  const buttonLabel = useMemo(() => {
-    if (timezone === null) return 'FLIGHT TIME'
-    if (timezone === localTz) return 'LOCAL'
-    const parts = timezone.split('/')
-    return parts[parts.length - 1].replace(/_/g, ' ')
-  }, [timezone, localTz])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -72,6 +68,10 @@ export function TimezonePicker({ timezone, onSelect }: Props) {
   useEffect(() => {
     if (open) {
       setSearch('')
+      if (buttonRef.current) {
+        const rect = buttonRef.current.getBoundingClientRect()
+        setDropPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right })
+      }
       setTimeout(() => searchRef.current?.focus(), 30)
     }
   }, [open])
@@ -79,8 +79,21 @@ export function TimezonePicker({ timezone, onSelect }: Props) {
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(target) &&
+        buttonRef.current && !buttonRef.current.contains(target)
+      ) {
+        setOpen(false)
+      }
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onMouseDown)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('mousedown', onMouseDown)
+    }
   }, [open])
 
   const pick = (tz: string | null) => {
@@ -91,66 +104,68 @@ export function TimezonePicker({ timezone, onSelect }: Props) {
   return (
     <>
       <button
+        ref={buttonRef}
         type="button"
         className={`header-tz-btn${timezone !== null ? ' active' : ''}`}
-        onClick={() => setOpen(true)}
+        onClick={() => setOpen((v) => !v)}
         title="Select time zone for chart X-axes"
       >
-        {buttonLabel}
+        TIME ZONE
       </button>
 
-      {open && (
+      {open && dropPos && (
         <div
-          className="tz-modal-backdrop"
-          role="presentation"
-          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false) }}
+          ref={dropdownRef}
+          className="tz-dropdown"
+          style={{ top: dropPos.top, right: dropPos.right }}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Select time zone"
         >
-          <div className="tz-modal" role="dialog" aria-modal="true" aria-label="Select time zone">
-            <h2 className="tz-modal-title">Time Zone</h2>
+          <h2 className="tz-modal-title">Time Zone</h2>
 
-            <div className="tz-special-row">
+          <div className="tz-special-row">
+            <button
+              type="button"
+              className={`tz-special-btn${timezone === null ? ' selected' : ''}`}
+              onClick={() => pick(null)}
+            >
+              Flight Time
+              <span className="tz-special-sub">elapsed</span>
+            </button>
+            <button
+              type="button"
+              className={`tz-special-btn${timezone === localTz ? ' selected' : ''}`}
+              onClick={() => pick(localTz)}
+            >
+              Local
+              <span className="tz-special-sub">{localTz}</span>
+            </button>
+          </div>
+
+          <input
+            ref={searchRef}
+            type="text"
+            className="tz-search"
+            placeholder="Search timezones…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <div className="tz-list">
+            {filtered.length === 0 && (
+              <p className="tz-empty">No matches</p>
+            )}
+            {filtered.map((tz) => (
               <button
+                key={tz}
                 type="button"
-                className={`tz-special-btn${timezone === null ? ' selected' : ''}`}
-                onClick={() => pick(null)}
+                className={`tz-option${timezone === tz ? ' selected' : ''}`}
+                onClick={() => pick(tz)}
               >
-                Flight Time
-                <span className="tz-special-sub">elapsed</span>
+                {tz.replace(/_/g, ' ')}
               </button>
-              <button
-                type="button"
-                className={`tz-special-btn${timezone === localTz ? ' selected' : ''}`}
-                onClick={() => pick(localTz)}
-              >
-                Local
-                <span className="tz-special-sub">{localTz}</span>
-              </button>
-            </div>
-
-            <input
-              ref={searchRef}
-              type="text"
-              className="tz-search"
-              placeholder="Search timezones…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-
-            <div className="tz-list">
-              {filtered.length === 0 && (
-                <p className="tz-empty">No matches</p>
-              )}
-              {filtered.map((tz) => (
-                <button
-                  key={tz}
-                  type="button"
-                  className={`tz-option${timezone === tz ? ' selected' : ''}`}
-                  onClick={() => pick(tz)}
-                >
-                  {tz.replace(/_/g, ' ')}
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
         </div>
       )}
