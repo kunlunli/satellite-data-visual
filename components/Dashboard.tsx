@@ -49,6 +49,16 @@ export default function Dashboard() {
   const t0Us = useMemo(() => (data.length > 0 ? data[0].timestamp : 0), [data])
   const tzCtx = useMemo(() => ({ timezone, t0Us }), [timezone, t0Us])
 
+  const logDate = useMemo(() => {
+    if (t0Us === 0) return ''
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone ?? 'UTC',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(t0Us / 1000))
+  }, [t0Us, timezone])
+
   const openPdfRangeModal = useCallback(() => {
     if (data.length === 0) return
     const n = data.length
@@ -332,8 +342,9 @@ export default function Dashboard() {
       {/* Top header */}
       <header className="app-header z-10 flex shrink-0 items-center gap-4 px-4 py-2">
         <div className="w-40 shrink-0 md:w-48" />
-        <div className="flex flex-1 justify-center">
+        <div className="flex flex-1 items-center justify-center gap-3">
           <span className="header-wordmark">Intellian</span>
+          {logDate && <span className="header-log-date">{logDate}</span>}
         </div>
         <div className="flex w-40 shrink-0 items-center justify-end gap-2 md:w-48">
           {hasData && (
@@ -519,11 +530,95 @@ export default function Dashboard() {
 function FocusedView({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-      <h2 className="shrink-0 text-sm font-semibold text-gray-700">{title}</h2>
+      <h2 className="shrink-0 text-sm font-semibold text-white">{title}</h2>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
     </div>
   )
 }
+
+type ViewKey = 'azel' | 'pae' | 'rssi'
+
+const CHART_LABELS: Record<ViewKey, string> = {
+  azel: 'Az / El Position',
+  pae: 'Pointing Accuracy Error',
+  rssi: 'RSSI',
+}
+
+function CombineBar({
+  currentView,
+  combined,
+  onAdd,
+  onRemove,
+}: {
+  currentView: ViewKey
+  combined: ViewKey[]
+  onAdd: (v: ViewKey) => void
+  onRemove: (v: ViewKey) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  const available = (Object.keys(CHART_LABELS) as ViewKey[]).filter(
+    (v) => v !== currentView && !combined.includes(v),
+  )
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (
+        dropRef.current && !dropRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="combine-bar shrink-0">
+      <div className="relative">
+        <button
+          ref={btnRef}
+          type="button"
+          className="combine-charts-btn"
+          onClick={() => setOpen((v) => !v)}
+          disabled={available.length === 0}
+        >
+          + Combine Charts
+        </button>
+        {open && (
+          <div ref={dropRef} className="combine-dropdown">
+            {available.map((v) => (
+              <button
+                key={v}
+                type="button"
+                className="combine-dropdown-item"
+                onClick={() => { onAdd(v); setOpen(false) }}
+              >
+                {CHART_LABELS[v]}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {combined.map((v) => (
+        <span key={v} className="combine-chip">
+          {CHART_LABELS[v]}
+          <button
+            type="button"
+            className="combine-chip-remove"
+            onClick={() => onRemove(v)}
+            aria-label={`Remove ${CHART_LABELS[v]}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}
+
 
 const DashboardView = memo(function DashboardView({
   data,
@@ -550,11 +645,20 @@ const PaeView = memo(function PaeView({
   currentIndex,
   isActive,
 }: CP & { isActive: boolean }) {
+  const [combined, setCombined] = useState<ViewKey[]>([])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-      <FocusedView title="Pointing Accuracy Error">
-        <PaeFull data={data} currentIndex={currentIndex} />
-      </FocusedView>
+      <CombineBar
+        currentView="pae"
+        combined={combined}
+        onAdd={(v) => setCombined((p) => [...p, v])}
+        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <FocusedView title="Pointing Accuracy Error">
+          <PaeFull data={data} currentIndex={currentIndex} combined={combined} />
+        </FocusedView>
+      </div>
     </div>
   )
 })
@@ -564,11 +668,20 @@ const RssiView = memo(function RssiView({
   currentIndex,
   isActive,
 }: CP & { isActive: boolean }) {
+  const [combined, setCombined] = useState<ViewKey[]>([])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-      <FocusedView title="RSSI">
-        <RssiFull data={data} currentIndex={currentIndex} />
-      </FocusedView>
+      <CombineBar
+        currentView="rssi"
+        combined={combined}
+        onAdd={(v) => setCombined((p) => [...p, v])}
+        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <FocusedView title="RSSI">
+          <RssiFull data={data} currentIndex={currentIndex} combined={combined} />
+        </FocusedView>
+      </div>
     </div>
   )
 })
@@ -578,18 +691,20 @@ const AzElView = memo(function AzElView({
   currentIndex,
   isActive,
 }: CP & { isActive: boolean }) {
+  const [combined, setCombined] = useState<ViewKey[]>([])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-      <FocusedView title="Azimuth & Elevation">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <AzElPositionChart
-            data={data}
-            currentIndex={currentIndex}
-            fill
-            showHeading={false}
-          />
-        </div>
-      </FocusedView>
+      <CombineBar
+        currentView="azel"
+        combined={combined}
+        onAdd={(v) => setCombined((p) => [...p, v])}
+        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <FocusedView title="Azimuth & Elevation">
+          <AzElFull data={data} currentIndex={currentIndex} combined={combined} />
+        </FocusedView>
+      </div>
     </div>
   )
 })
@@ -621,16 +736,34 @@ const FULL_PLOT_BOUNDS: PlotBounds = {
   top: FULL_MARGIN.top,
   bottom: FULL_MARGIN.bottom,
 }
+// AzEl always has a visible right YAxis for elevation (width 60px)
+const AZEL_FULL_MARGIN = { ...FULL_MARGIN, right: FULL_MARGIN.right + 60 }
+const AZEL_FULL_PLOT_BOUNDS: PlotBounds = {
+  left: FULL_MARGIN.left + 60,
+  right: FULL_MARGIN.right + 60,
+  top: FULL_MARGIN.top,
+  bottom: FULL_MARGIN.bottom,
+}
 
-function PaeFull({ data, currentIndex }: CP) {
+// Hidden zero-width axis — gives a series its own independent scale without
+// consuming chart space or showing tick labels.
+const HIDDEN_AXIS_PROPS = { hide: true, width: 0, domain: ['auto', 'auto'] } as const
+
+function PaeFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
   const allChartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
-    [data],
+    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
+      t: r.flightTimeMs,
+      paeX: r.pae_joint_X,
+      paeY: r.pae_joint_Y,
+      ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+      ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+    })),
+    [data, combined],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
@@ -645,47 +778,60 @@ function PaeFull({ data, currentIndex }: CP) {
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fontSize: 11 }}
-              label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            {/* Primary visible axis */}
+            <YAxis yAxisId="pae" orientation="left" domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 11 }}
+              label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            {/* Each combined series gets its own hidden axis for independent scaling */}
+            {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
-              formatter={(v: number, name: string) => [v.toFixed(4) + '°', name]} />
+              formatter={(v: number, name: string) => [v.toFixed(4), name]} />
             <Legend verticalAlign="top" />
-            <Line type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
-            <Line type="monotone" dataKey="paeY" name="PAE Y" stroke="#ea580c" dot={false} strokeWidth={2} isAnimationActive={false} />
-            <ReferenceLine x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
+            <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
+            <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#ea580c" dot={false} strokeWidth={2} isAnimationActive={false} />
+            {combined.includes('rssi') && (
+              <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('azel') && (
+              <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('azel') && (
+              <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            <ReferenceLine yAxisId="pae" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
             {currentPaeX != null && (
-              <ReferenceDot x={currentTime} y={currentPaeX} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
+              <ReferenceDot yAxisId="pae" x={currentTime} y={currentPaeX} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
             {currentPaeY != null && (
-              <ReferenceDot x={currentTime} y={currentPaeY} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
+              <ReferenceDot yAxisId="pae" x={currentTime} y={currentPaeY} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
       </div>
       {isZoomed && (
-        <ZoomScrollbar
-          className="shrink-0"
-          fullDomain={timeDomain}
-          visibleDomain={zoomDomain}
-          onPan={pan}
-          leftPad={FULL_PLOT_BOUNDS.left}
-          rightPad={FULL_PLOT_BOUNDS.right}
-        />
+        <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
+          leftPad={FULL_PLOT_BOUNDS.left} rightPad={FULL_PLOT_BOUNDS.right} />
       )}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }
 
-function RssiFull({ data, currentIndex }: CP) {
+function RssiFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
   const allChartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
-    [data],
+    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
+      t: r.flightTimeMs,
+      rssi: r.rssi,
+      ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+      ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+    })),
+    [data, combined],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
@@ -699,27 +845,111 @@ function RssiFull({ data, currentIndex }: CP) {
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(2)} tick={{ fontSize: 11 }}
+            {/* Primary visible axis */}
+            <YAxis yAxisId="rssi" orientation="left" domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 11 }}
               label={{ value: 'RSSI', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            {/* Independent hidden axes for combined series */}
+            {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
-              formatter={(v: number) => [v.toFixed(1), 'RSSI']} />
-            <Line type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
-            <ReferenceLine x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
+              formatter={(v: number, name: string) => [v.toFixed(3), name]} />
+            <Legend verticalAlign="top" />
+            <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
+            {combined.includes('pae') && (
+              <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('pae') && (
+              <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('azel') && (
+              <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('azel') && (
+              <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            <ReferenceLine yAxisId="rssi" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
             {currentRssi != null && (
-              <ReferenceDot x={currentTime} y={currentRssi} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
+              <ReferenceDot yAxisId="rssi" x={currentTime} y={currentRssi} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
       </div>
       {isZoomed && (
-        <ZoomScrollbar
-          className="shrink-0"
-          fullDomain={timeDomain}
-          visibleDomain={zoomDomain}
-          onPan={pan}
-          leftPad={FULL_PLOT_BOUNDS.left}
-          rightPad={FULL_PLOT_BOUNDS.right}
-        />
+        <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
+          leftPad={FULL_PLOT_BOUNDS.left} rightPad={FULL_PLOT_BOUNDS.right} />
+      )}
+      <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
+    </div>
+  )
+}
+
+function AzElFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
+  const { timezone, t0Us } = useTimezone()
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
+  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, AZEL_FULL_PLOT_BOUNDS)
+  const allChartData = useMemo(
+    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
+      t: r.flightTimeMs,
+      az: r.cur_az,
+      el: r.cur_el,
+      ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+      ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+    })),
+    [data, combined],
+  )
+  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
+  const currentTime = data[currentIndex]?.flightTimeMs ?? 0
+  const currentAz = data[currentIndex]?.cur_az
+  const currentEl = data[currentIndex]?.cur_el
+  return (
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-3 shadow-sm">
+      <div ref={containerRef} className="min-h-0 w-full flex-1 pt-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={AZEL_FULL_MARGIN}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
+              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
+            {/* Primary visible axes: az on left, el on right */}
+            <YAxis yAxisId="az" orientation="left" domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+              label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            <YAxis yAxisId="el" orientation="right" domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+              label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 12 }} />
+            {/* Independent hidden axes for combined series */}
+            {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
+            {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
+            <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
+              formatter={(v: number, name: string) => [v.toFixed(3), name]} />
+            <Legend verticalAlign="top" />
+            <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            {combined.includes('pae') && (
+              <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('pae') && (
+              <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            {combined.includes('rssi') && (
+              <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+            )}
+            <ReferenceLine yAxisId="az" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
+            {currentAz != null && (
+              <ReferenceDot yAxisId="az" x={currentTime} y={currentAz} r={4} fill="#2563eb" stroke="#fff" strokeWidth={1} isFront />
+            )}
+            {currentEl != null && (
+              <ReferenceDot yAxisId="el" x={currentTime} y={currentEl} r={4} fill="#ea580c" stroke="#fff" strokeWidth={1} isFront />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      {isZoomed && (
+        <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
+          leftPad={AZEL_FULL_PLOT_BOUNDS.left} rightPad={AZEL_FULL_PLOT_BOUNDS.right} />
       )}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>

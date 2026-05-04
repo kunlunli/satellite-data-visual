@@ -370,6 +370,14 @@ body {
   color: var(--amber);
 }
 
+.header-log-date {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-bright);
+}
+
 .header-export-pdf-btn {
   font-family: 'Inter', 'Segoe UI', sans-serif;
   font-size: 11px;
@@ -1014,6 +1022,116 @@ body {
   color: color-mix(in srgb, var(--text-mid) 88%, white 12%);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
+
+/* ── Combine Charts bar ───────────────────────────────────────────── */
+
+.combine-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 2px 8px;
+}
+
+.combine-charts-btn {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 70%, white 30%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--text-mid);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.combine-charts-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--steel-mid) 50%, white 50%);
+  color: var(--text-bright);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.06));
+}
+
+.combine-charts-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.combine-dropdown {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 250;
+  min-width: 200px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 70%, white 30%);
+  background: color-mix(in srgb, var(--panel) 95%, #0f172a 5%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.combine-dropdown-item {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-mid);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.combine-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-bright);
+}
+
+.combine-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 9px;
+  border-radius: 100px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--steel-mid) 55%);
+  background: rgba(255, 143, 0, 0.1);
+  color: var(--amber);
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.combine-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--amber);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.7;
+  transition: opacity 0.1s ease;
+}
+
+.combine-chip-remove:hover {
+  opacity: 1;
+}
+
 
 /* ── Timezone picker button ───────────────────────────────────────── */
 
