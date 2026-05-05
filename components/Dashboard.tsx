@@ -747,7 +747,7 @@ const AZEL_FULL_PLOT_BOUNDS: PlotBounds = {
 
 // Hidden zero-width axis — gives a series its own independent scale without
 // consuming chart space or showing tick labels.
-const HIDDEN_AXIS_PROPS = { hide: true, width: 0, domain: ['auto', 'auto'] } as const
+const HIDDEN_AXIS_PROPS = { hide: true, width: 0, domain: ['auto', 'auto'] as [string, string] }
 
 function PaeFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
   const { timezone, t0Us } = useTimezone()
