@@ -1340,14 +1340,17 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 11 }}
-              label={{ value: 'RSSI', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} tickFormatter={(v: number) => (v / 40).toFixed(1)} tick={{ fontSize: 11 }}
+              label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
             {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
-              formatter={(v: number, name: string) => [v.toFixed(3), name]} />
+              formatter={(v: number, name: string) => [
+                name.startsWith('RSSI') ? ((v / 40).toFixed(2) + ' dBm') : v.toFixed(3),
+                name,
+              ]} />
             {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
               <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />

@@ -78,14 +78,14 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true }
             orientation="left"
             width={SYNCED_LEFT_Y_AXIS_WIDTH}
             domain={['auto', 'auto']}
-            tickFormatter={(v: number) => v.toFixed(2)}
+            tickFormatter={(v: number) => (v / 40).toFixed(2)}
             tick={{ fontSize: 13 }}
-            label={{ value: 'rssi', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
+            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
           />
           <SyncPadRightYAxis />
           <Tooltip
             labelFormatter={(v) => fmtTooltip(Number(v))}
-            formatter={(v: number) => [v.toFixed(1), 'RSSI']}
+            formatter={(v: number) => [(v / 40).toFixed(2) + ' dBm', 'RSSI']}
           />
           <Line
             yAxisId="left"
