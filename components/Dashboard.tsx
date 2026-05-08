@@ -17,9 +17,21 @@ import DashboardPdfSnapshot from '@/components/DashboardPdfSnapshot'
 import { TimezoneContext } from '@/lib/timezoneContext'
 import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 
+interface LogEntry {
+  id: string
+  fileName: string
+  data: SatelliteDataRow[]
+}
+
+const EMPTY_DATA: SatelliteDataRow[] = []
+
 export default function Dashboard() {
-  const [data, setData] = useState<SatelliteDataRow[]>([])
-  const [fileName, setFileName] = useState('')
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [activeLogId, setActiveLogId] = useState<string | null>(null)
+  const [manageLogsOpen, setManageLogsOpen] = useState(false)
+  const activeLog = useMemo(() => logs.find((l) => l.id === activeLogId) ?? null, [logs, activeLogId])
+  const data = activeLog?.data ?? EMPTY_DATA
+  const fileName = activeLog?.fileName ?? ''
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -35,6 +47,7 @@ export default function Dashboard() {
   const [indexByView, setIndexByView] = useState({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
   const [timelinePanelOpen, setTimelinePanelOpen] = useState(true)
   const pdfSnapshotRef = useRef<HTMLDivElement>(null)
+  const hiddenFileInputRef = useRef<HTMLInputElement>(null)
   const [pdfExporting, setPdfExporting] = useState(false)
   const [pdfExportIndex, setPdfExportIndex] = useState(0)
   const [pdfExportPdfPage, setPdfExportPdfPage] = useState({ current: 1, total: 1 })
@@ -166,34 +179,81 @@ export default function Dashboard() {
     void runPdfExport(indices)
   }, [data, pdfFrameStart, pdfFrameEnd, runPdfExport])
 
-  const handleFile = useCallback(async (file: File) => {
+  const handleFiles = useCallback(async (files: File[]) => {
+    if (files.length === 0) return
     setLoading(true)
     setError('')
     try {
-      const parsed = await parseLogFile(file)
-      setData(parsed)
-      setCurrentIndex(0)
-      setFileName(file.name)
-      setActiveView('dashboard')
-      setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
-      setLoadingView(null)
-      setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
-      setTimelinePanelOpen(true)
-    } catch (e) {
-      setError('Failed to parse file. Make sure it is a valid .txt or .log with 15 comma-separated columns.')
-      console.error(e)
+      const results = await Promise.all(
+        files.map(async (file) => {
+          try {
+            const parsed = await parseLogFile(file)
+            return { ok: true as const, fileName: file.name, data: parsed }
+          } catch {
+            return { ok: false as const, fileName: file.name }
+          }
+        })
+      )
+      type OkResult = { ok: true; fileName: string; data: SatelliteDataRow[] }
+      const successes = results.filter((r): r is OkResult => r.ok)
+      const failNames = results.filter((r) => !r.ok).map((r) => r.fileName)
+      if (successes.length > 0) {
+        const newEntries: LogEntry[] = successes.map((r) => ({
+          id: crypto.randomUUID(),
+          fileName: r.fileName,
+          data: r.data,
+        }))
+        setLogs((prev) => [...prev, ...newEntries])
+        const lastId = newEntries[newEntries.length - 1].id
+        setActiveLogId(lastId)
+        setCurrentIndex(0)
+        setActiveView('dashboard')
+        setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
+        setLoadingView(null)
+        setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+        setTimelinePanelOpen(true)
+      }
+      if (failNames.length > 0) {
+        setError(
+          failNames.length === 1
+            ? `Failed to parse "${failNames[0]}". Make sure it is a valid .txt or .log with 15 comma-separated columns.`
+            : `Failed to parse ${failNames.length} files: ${failNames.join(', ')}. Make sure each is a valid .txt or .log with 15 comma-separated columns.`
+        )
+      }
     } finally {
       setLoading(false)
     }
   }, [])
 
   const handleLoadNew = useCallback(() => {
-    setData([])
-    setFileName('')
+    hiddenFileInputRef.current?.click()
+  }, [])
+
+  const switchLog = useCallback((id: string) => {
+    setActiveLogId(id)
+    setCurrentIndex(0)
     setActiveView('dashboard')
     setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
-    setLoadingView(null)
     setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+    setManageLogsOpen(false)
+  }, [])
+
+  const removeLog = useCallback((id: string) => {
+    setLogs((prev) => {
+      const next = prev.filter((l) => l.id !== id)
+      setActiveLogId((cur) => {
+        if (cur !== id) return cur
+        const newActive = next[next.length - 1]?.id ?? null
+        if (!newActive) {
+          setCurrentIndex(0)
+          setActiveView('dashboard')
+          setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
+          setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+        }
+        return newActive
+      })
+      return next
+    })
   }, [])
 
   const stepTimeline = useCallback((delta: number) => {
@@ -213,6 +273,7 @@ export default function Dashboard() {
   }, [activeView, mountedViews])
 
   const hasData = data.length > 0
+  const otherLogs = useMemo(() => logs.filter((l) => l.id !== activeLogId), [logs, activeLogId])
   const totalMs = hasData ? data[data.length - 1].flightTimeMs : 0
   const currentTime = hasData ? data[currentIndex].flightTimeMs : 0
   const scrubRow = hasData ? data[currentIndex] : undefined
@@ -339,6 +400,81 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Hidden file input for multi-file loading */}
+      <input
+        ref={hiddenFileInputRef}
+        type="file"
+        accept=".txt,.log,.csv"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          if (files.length > 0) {
+            void handleFiles(files)
+            e.target.value = ''
+          }
+        }}
+      />
+
+      {/* Manage Logs modal */}
+      {manageLogsOpen && (
+        <div
+          className="manage-logs-backdrop"
+          role="presentation"
+          onClick={(e) => e.target === e.currentTarget && setManageLogsOpen(false)}
+        >
+          <div
+            className="manage-logs-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manage-logs-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="manage-logs-title" className="manage-logs-title">Manage Logs</h2>
+            {logs.length === 0 ? (
+              <p className="manage-logs-empty">No logs loaded.</p>
+            ) : (
+              <ul className="manage-logs-list">
+                {logs.map((log) => (
+                  <li key={log.id} className={`manage-logs-item${log.id === activeLogId ? ' active' : ''}`}>
+                    <span className="manage-logs-name" title={log.fileName}>{log.fileName}</span>
+                    <div className="manage-logs-actions">
+                      {log.id === activeLogId ? (
+                        <span className="manage-logs-active-badge">Active</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="manage-logs-btn switch"
+                          onClick={() => switchLog(log.id)}
+                        >
+                          Switch
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="manage-logs-btn remove"
+                        onClick={() => removeLog(log.id)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="manage-logs-footer">
+              <button
+                type="button"
+                className="manage-logs-close-btn"
+                onClick={() => setManageLogsOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top header */}
       <header className="app-header z-10 flex shrink-0 items-center gap-4 px-4 py-2">
         <div className="w-40 shrink-0 md:w-48" />
@@ -372,6 +508,8 @@ export default function Dashboard() {
           fileName={fileName}
           hasData={hasData}
           onLoadNewFile={handleLoadNew}
+          onManageLogs={() => setManageLogsOpen(true)}
+          logCount={logs.length}
         />
 
         <main
@@ -484,7 +622,7 @@ export default function Dashboard() {
                 <h1 className="screen-title">SATELLITE TRACKING<br />VISUALIZER</h1>
                 <p className="screen-subtitle">INITIALIZE TELEMETRY ANALYSIS · LOAD CSV LOG FILE</p>
               </div>
-              <FileUpload onFile={handleFile} loading={loading} />
+              <FileUpload onFiles={handleFiles} loading={loading} />
               {error && (
                 <div className="upload-error-block">
                   <span className="upload-error-tag">ERR</span>
@@ -510,13 +648,13 @@ export default function Dashboard() {
                 <DashboardView data={data} currentIndex={dashboardPlayIndex} isActive={activeView === 'dashboard'} />
               )}
               {mountedViews.azel && (
-                <AzElView data={data} currentIndex={azelPlayIndex} isActive={activeView === 'azel'} />
+                <AzElView data={data} currentIndex={azelPlayIndex} isActive={activeView === 'azel'} otherLogs={otherLogs} fileName={fileName} />
               )}
               {mountedViews.pae && (
-                <PaeView data={data} currentIndex={paePlayIndex} isActive={activeView === 'pae'} />
+                <PaeView data={data} currentIndex={paePlayIndex} isActive={activeView === 'pae'} otherLogs={otherLogs} fileName={fileName} />
               )}
               {mountedViews.rssi && (
-                <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} />
+                <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} otherLogs={otherLogs} fileName={fileName} />
               )}
             </div>
           )}
@@ -644,8 +782,19 @@ const PaeView = memo(function PaeView({
   data,
   currentIndex,
   isActive,
-}: CP & { isActive: boolean }) {
+  otherLogs,
+  fileName,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
   const [combined, setCombined] = useState<ViewKey[]>([])
+  const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
+  const combinedLogs = useMemo(
+    () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
+    [combinedLogIds, otherLogs],
+  )
+  useEffect(() => {
+    const ids = new Set(otherLogs.map((l) => l.id))
+    setCombinedLogIds((p) => p.filter((id) => ids.has(id)))
+  }, [otherLogs])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
       <CombineBar
@@ -654,9 +803,15 @@ const PaeView = memo(function PaeView({
         onAdd={(v) => setCombined((p) => [...p, v])}
         onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
       />
+      <CombineLogsBar
+        otherLogs={otherLogs}
+        combinedLogIds={combinedLogIds}
+        onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
+        onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="Pointing Accuracy Error">
-          <PaeFull data={data} currentIndex={currentIndex} combined={combined} />
+          <PaeFull data={data} currentIndex={currentIndex} combined={combined} combinedLogs={combinedLogs} fileName={fileName} />
         </FocusedView>
       </div>
     </div>
@@ -667,8 +822,19 @@ const RssiView = memo(function RssiView({
   data,
   currentIndex,
   isActive,
-}: CP & { isActive: boolean }) {
+  otherLogs,
+  fileName,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
   const [combined, setCombined] = useState<ViewKey[]>([])
+  const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
+  const combinedLogs = useMemo(
+    () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
+    [combinedLogIds, otherLogs],
+  )
+  useEffect(() => {
+    const ids = new Set(otherLogs.map((l) => l.id))
+    setCombinedLogIds((p) => p.filter((id) => ids.has(id)))
+  }, [otherLogs])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
       <CombineBar
@@ -677,9 +843,15 @@ const RssiView = memo(function RssiView({
         onAdd={(v) => setCombined((p) => [...p, v])}
         onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
       />
+      <CombineLogsBar
+        otherLogs={otherLogs}
+        combinedLogIds={combinedLogIds}
+        onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
+        onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="RSSI">
-          <RssiFull data={data} currentIndex={currentIndex} combined={combined} />
+          <RssiFull data={data} currentIndex={currentIndex} combined={combined} combinedLogs={combinedLogs} fileName={fileName} />
         </FocusedView>
       </div>
     </div>
@@ -690,8 +862,19 @@ const AzElView = memo(function AzElView({
   data,
   currentIndex,
   isActive,
-}: CP & { isActive: boolean }) {
+  otherLogs,
+  fileName,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
   const [combined, setCombined] = useState<ViewKey[]>([])
+  const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
+  const combinedLogs = useMemo(
+    () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
+    [combinedLogIds, otherLogs],
+  )
+  useEffect(() => {
+    const ids = new Set(otherLogs.map((l) => l.id))
+    setCombinedLogIds((p) => p.filter((id) => ids.has(id)))
+  }, [otherLogs])
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
       <CombineBar
@@ -700,9 +883,15 @@ const AzElView = memo(function AzElView({
         onAdd={(v) => setCombined((p) => [...p, v])}
         onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
       />
+      <CombineLogsBar
+        otherLogs={otherLogs}
+        combinedLogIds={combinedLogIds}
+        onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
+        onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="Azimuth & Elevation">
-          <AzElFull data={data} currentIndex={currentIndex} combined={combined} />
+          <AzElFull data={data} currentIndex={currentIndex} combined={combined} combinedLogs={combinedLogs} fileName={fileName} />
         </FocusedView>
       </div>
     </div>
@@ -749,7 +938,193 @@ const AZEL_FULL_PLOT_BOUNDS: PlotBounds = {
 // consuming chart space or showing tick labels.
 const HIDDEN_AXIS_PROPS = { hide: true, width: 0, domain: ['auto', 'auto'] as [string, string] }
 
-function PaeFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
+const LOG_COLORS = ['#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316']
+const logLabel = (log: LogEntry) => log.fileName.replace(/\.[^.]+$/, '').slice(0, 22)
+
+interface LineSpec { key: string; label: string; color: string; dashed?: boolean; dualLine?: boolean }
+
+function LineToggleBar({ lines, hidden, onToggle }: { lines: LineSpec[]; hidden: string[]; onToggle: (k: string) => void }) {
+  const primaryLines = lines.filter((l) => !l.key.startsWith('log_'))
+  return (
+    <div className="line-toggle-bar">
+      {primaryLines.map((l) => {
+        const isHidden = hidden.includes(l.key)
+        return (
+          <button
+            key={l.key}
+            type="button"
+            className={`line-toggle-btn${isHidden ? ' off' : ''}`}
+            onClick={() => onToggle(l.key)}
+            title={isHidden ? `Show ${l.label}` : `Hide ${l.label}`}
+          >
+            <span className="line-toggle-swatch" style={{ background: isHidden || l.dashed ? 'transparent' : l.color, borderColor: l.color }} />
+            {l.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function CombineLogsBar({
+  otherLogs,
+  combinedLogIds,
+  onAdd,
+  onRemove,
+}: {
+  otherLogs: LogEntry[]
+  combinedLogIds: string[]
+  onAdd: (id: string) => void
+  onRemove: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (
+        dropRef.current && !dropRef.current.contains(e.target as Node) &&
+        btnRef.current && !btnRef.current.contains(e.target as Node)
+      ) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div className="combine-bar shrink-0">
+      <div className="relative">
+        <button
+          ref={btnRef}
+          type="button"
+          className="combine-logs-btn"
+          onClick={() => setOpen((v) => !v)}
+          disabled={otherLogs.length === 0}
+          title={otherLogs.length === 0 ? 'Load more log files to combine' : undefined}
+        >
+          + Combine Logs
+        </button>
+        {open && otherLogs.length > 0 && (
+          <div ref={dropRef} className="combine-dropdown">
+            {otherLogs.map((l) => {
+              const isCombined = combinedLogIds.includes(l.id)
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  className={`combine-dropdown-item${isCombined ? ' selected' : ''}`}
+                  onClick={() => isCombined ? onRemove(l.id) : onAdd(l.id)}
+                >
+                  <span className="combine-dropdown-check">{isCombined ? '✓' : ''}</span>
+                  {l.fileName}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      {combinedLogIds.map((id, i) => {
+        const log = otherLogs.find((l) => l.id === id)
+        if (!log) return null
+        const color = LOG_COLORS[i % LOG_COLORS.length]
+        return (
+          <span key={id} className="combine-chip log-chip">
+            <span className="log-chip-dot" style={{ background: color }} />
+            {logLabel(log)}
+            <button
+              type="button"
+              className="combine-chip-remove"
+              onClick={() => onRemove(id)}
+              aria-label={`Remove ${log.fileName}`}
+            >
+              ×
+            </button>
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
+function LogLineIcon({ color, dual, dashed }: { color: string; dual?: boolean; dashed?: boolean }) {
+  if (dual) {
+    return (
+      <svg width="22" height="14" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <line x1="1" y1="4" x2="21" y2="4" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+        <line x1="1" y1="10" x2="21" y2="10" stroke={color} strokeWidth="2" strokeDasharray="5 2" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  return (
+    <svg width="22" height="8" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <line x1="1" y1="4" x2="21" y2="4" stroke={color} strokeWidth="2.5" strokeDasharray={dashed ? '5 2' : undefined} strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function ChartLegend({
+  primaryLabel,
+  primaryColor,
+  primaryDualLine,
+  lines,
+}: {
+  primaryLabel: string
+  primaryColor: string
+  primaryDualLine: boolean
+  lines: LineSpec[]
+}) {
+  const [visible, setVisible] = useState(true)
+  const combinedLines = lines.filter((l) => l.key.startsWith('log_'))
+
+  if (!visible) {
+    return (
+      <button
+        type="button"
+        className="chart-legend-collapsed"
+        onClick={() => setVisible(true)}
+        aria-label="Show legend"
+        title="Show legend"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
+          <line x1="8" y1="6" x2="21" y2="6" strokeLinecap="round" />
+          <line x1="8" y1="12" x2="21" y2="12" strokeLinecap="round" />
+          <line x1="8" y1="18" x2="21" y2="18" strokeLinecap="round" />
+          <circle cx="3.5" cy="6" r="1.2" fill="currentColor" />
+          <circle cx="3.5" cy="12" r="1.2" fill="currentColor" />
+          <circle cx="3.5" cy="18" r="1.2" fill="currentColor" />
+        </svg>
+      </button>
+    )
+  }
+
+  return (
+    <div className="chart-legend-toggle" aria-label="Log legend">
+      <button
+        type="button"
+        className="clt-hide-btn"
+        onClick={() => setVisible(false)}
+        aria-label="Hide legend"
+        title="Hide legend"
+      >
+        ×
+      </button>
+      <div className="clt-row">
+        <LogLineIcon color={primaryColor} dual={primaryDualLine} />
+        <span className="clt-label">{primaryLabel || 'Active log'}</span>
+      </div>
+      {combinedLines.map((line) => (
+        <div key={line.key} className="clt-row">
+          <LogLineIcon color={line.color} dual={line.dualLine} />
+          <span className="clt-label">{line.label}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
@@ -766,48 +1141,96 @@ function PaeFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] })
     [data, combined],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
+  const combinedLogData = useMemo(
+    () => combinedLogs.map((log) => ({
+      log,
+      chartData: sliceByTime(
+        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
+        zoomDomain[0], zoomDomain[1],
+      ),
+    })),
+    [combinedLogs, zoomDomain],
+  )
+  // Stable PAE domain from all logs — so hiding one line or adding a combined
+  // log doesn't rescale the axis and distort visible line shapes.
+  const paeDomain = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const d of chartData) { chk(d.paeX); chk(d.paeY) }
+    for (const { chartData: lcd } of combinedLogData) { for (const d of lcd) { chk(d.paeX); chk(d.paeY) } }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.0001)
+    return [min - pad, max + pad]
+  }, [chartData, combinedLogData])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
+  const [hiddenLines, setHiddenLines] = useState<string[]>([])
+  const toggleLine = useCallback((k: string) => setHiddenLines((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]), [])
+  const lines = useMemo<LineSpec[]>(() => {
+    const base: LineSpec[] = [
+      { key: 'paeX', label: 'PAE X', color: '#2563eb', dashed: false },
+      { key: 'paeY', label: 'PAE Y', color: '#2563eb', dashed: true },
+    ]
+    if (combined.includes('rssi')) base.push({ key: 'rssi', label: 'RSSI', color: '#7c3aed' })
+    if (combined.includes('azel')) {
+      base.push({ key: 'az', label: 'Azimuth', color: '#16a34a' })
+      base.push({ key: 'el', label: 'Elevation', color: '#0891b2' })
+    }
+    combinedLogs.forEach((log, i) => base.push({ key: `log_${log.id}`, label: logLabel(log), color: LOG_COLORS[i % LOG_COLORS.length], dualLine: true }))
+    return base
+  }, [combined, combinedLogs])
+  useEffect(() => {
+    const valid = lines.map((l) => l.key)
+    setHiddenLines((p) => p.filter((k) => valid.includes(k)))
+  }, [lines])
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
-      <div ref={containerRef} className="min-h-0 w-full flex-1">
+      <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
+      <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            {/* Primary visible axis */}
-            <YAxis yAxisId="pae" orientation="left" domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 11 }}
+            <YAxis yAxisId="pae" orientation="left" domain={paeDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 11 }}
               label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            {/* Each combined series gets its own hidden axis for independent scaling */}
             {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [v.toFixed(4), name]} />
-            <Legend verticalAlign="top" />
-            <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
-            <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#ea580c" dot={false} strokeWidth={2} isAnimationActive={false} />
-            {combined.includes('rssi') && (
+            {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />}
+            {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={false} strokeWidth={2} strokeDasharray="5 3" isAnimationActive={false} />}
+            {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
               <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('azel') && (
+            {combined.includes('azel') && !hiddenLines.includes('az') && (
               <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('azel') && (
+            {combined.includes('azel') && !hiddenLines.includes('el') && (
               <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
+            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
+              if (hiddenLines.includes(`log_${log.id}`)) return []
+              const color = LOG_COLORS[i % LOG_COLORS.length]
+              const lbl = logLabel(log)
+              return [
+                <Line key={`${log.id}_pX`} data={lcd} yAxisId="pae" type="monotone" dataKey="paeX" name={`PAE X · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_pY`} data={lcd} yAxisId="pae" type="monotone" dataKey="paeY" name={`PAE Y · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+              ]
+            })}
             <ReferenceLine yAxisId="pae" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
-            {currentPaeX != null && (
+            {!hiddenLines.includes('paeX') && currentPaeX != null && (
               <ReferenceDot yAxisId="pae" x={currentTime} y={currentPaeX} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
-            {currentPaeY != null && (
+            {!hiddenLines.includes('paeY') && currentPaeY != null && (
               <ReferenceDot yAxisId="pae" x={currentTime} y={currentPaeY} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
+        <ChartLegend primaryLabel={fileName} primaryColor="#2563eb" primaryDualLine lines={lines} />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
@@ -818,7 +1241,7 @@ function PaeFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] })
   )
 }
 
-function RssiFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
+function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
@@ -834,47 +1257,92 @@ function RssiFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }
     [data, combined],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
+  const combinedLogData = useMemo(
+    () => combinedLogs.map((log) => ({
+      log,
+      chartData: sliceByTime(
+        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
+        zoomDomain[0], zoomDomain[1],
+      ),
+    })),
+    [combinedLogs, zoomDomain],
+  )
+  const rssiDomain = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const d of chartData) chk(d.rssi)
+    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.rssi)
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [chartData, combinedLogData])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentRssi = data[currentIndex]?.rssi
+  const [hiddenLines, setHiddenLines] = useState<string[]>([])
+  const toggleLine = useCallback((k: string) => setHiddenLines((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]), [])
+  const lines = useMemo<LineSpec[]>(() => {
+    const base: LineSpec[] = [{ key: 'rssi', label: 'RSSI', color: '#7c3aed' }]
+    if (combined.includes('pae')) {
+      base.push({ key: 'paeX', label: 'PAE X', color: '#16a34a' })
+      base.push({ key: 'paeY', label: 'PAE Y', color: '#0891b2' })
+    }
+    if (combined.includes('azel')) {
+      base.push({ key: 'az', label: 'Azimuth', color: '#16a34a' })
+      base.push({ key: 'el', label: 'Elevation', color: '#0891b2' })
+    }
+    combinedLogs.forEach((log, i) => base.push({ key: `log_${log.id}`, label: logLabel(log), color: LOG_COLORS[i % LOG_COLORS.length], dualLine: false }))
+    return base
+  }, [combined, combinedLogs])
+  useEffect(() => {
+    const valid = lines.map((l) => l.key)
+    setHiddenLines((p) => p.filter((k) => valid.includes(k)))
+  }, [lines])
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-4 shadow-sm">
-      <div ref={containerRef} className="min-h-0 w-full flex-1">
+      <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
+      <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            {/* Primary visible axis */}
-            <YAxis yAxisId="rssi" orientation="left" domain={['auto', 'auto']} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 11 }}
+            <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 11 }}
               label={{ value: 'RSSI', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            {/* Independent hidden axes for combined series */}
             {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [v.toFixed(3), name]} />
-            <Legend verticalAlign="top" />
-            <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
-            {combined.includes('pae') && (
+            {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />}
+            {combined.includes('pae') && !hiddenLines.includes('paeX') && (
               <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('pae') && (
+            {combined.includes('pae') && !hiddenLines.includes('paeY') && (
               <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('azel') && (
+            {combined.includes('azel') && !hiddenLines.includes('az') && (
               <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('azel') && (
+            {combined.includes('azel') && !hiddenLines.includes('el') && (
               <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
+            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
+              if (hiddenLines.includes(`log_${log.id}`)) return []
+              const color = LOG_COLORS[i % LOG_COLORS.length]
+              const lbl = logLabel(log)
+              return [
+                <Line key={`${log.id}_rssi`} data={lcd} yAxisId="rssi" type="monotone" dataKey="rssi" name={`RSSI · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+              ]
+            })}
             <ReferenceLine yAxisId="rssi" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
-            {currentRssi != null && (
+            {!hiddenLines.includes('rssi') && currentRssi != null && (
               <ReferenceDot yAxisId="rssi" x={currentTime} y={currentRssi} r={5} fill="#ef4444" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
+        <ChartLegend primaryLabel={fileName} primaryColor="#7c3aed" primaryDualLine={false} lines={lines} />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
@@ -885,7 +1353,7 @@ function RssiFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }
   )
 }
 
-function AzElFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }) {
+function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
@@ -902,50 +1370,105 @@ function AzElFull({ data, currentIndex, combined }: CP & { combined: ViewKey[] }
     [data, combined],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
+  const combinedLogData = useMemo(
+    () => combinedLogs.map((log) => ({
+      log,
+      chartData: sliceByTime(
+        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
+        zoomDomain[0], zoomDomain[1],
+      ),
+    })),
+    [combinedLogs, zoomDomain],
+  )
+  const azDomain = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const d of chartData) chk(d.az)
+    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.az)
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [chartData, combinedLogData])
+  const elDomain = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const d of chartData) chk(d.el)
+    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.el)
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [chartData, combinedLogData])
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentAz = data[currentIndex]?.cur_az
   const currentEl = data[currentIndex]?.cur_el
+  const [hiddenLines, setHiddenLines] = useState<string[]>([])
+  const toggleLine = useCallback((k: string) => setHiddenLines((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]), [])
+  const lines = useMemo<LineSpec[]>(() => {
+    const base: LineSpec[] = [
+      { key: 'az', label: 'Azimuth', color: '#2563eb', dashed: false },
+      { key: 'el', label: 'Elevation', color: '#2563eb', dashed: true },
+    ]
+    if (combined.includes('pae')) {
+      base.push({ key: 'paeX', label: 'PAE X', color: '#16a34a' })
+      base.push({ key: 'paeY', label: 'PAE Y', color: '#0891b2' })
+    }
+    if (combined.includes('rssi')) base.push({ key: 'rssi', label: 'RSSI', color: '#7c3aed' })
+    combinedLogs.forEach((log, i) => base.push({ key: `log_${log.id}`, label: logLabel(log), color: LOG_COLORS[i % LOG_COLORS.length], dualLine: true }))
+    return base
+  }, [combined, combinedLogs])
+  useEffect(() => {
+    const valid = lines.map((l) => l.key)
+    setHiddenLines((p) => p.filter((k) => valid.includes(k)))
+  }, [lines])
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-white p-3 shadow-sm">
-      <div ref={containerRef} className="min-h-0 w-full flex-1 pt-1">
+      <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
+      <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={AZEL_FULL_MARGIN}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 10 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            {/* Primary visible axes: az on left, el on right */}
-            <YAxis yAxisId="az" orientation="left" domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+            <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 11 }}
               label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            <YAxis yAxisId="el" orientation="right" domain={['auto', 'auto']} tick={{ fontSize: 11 }}
+            <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 11 }}
               label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 12 }} />
-            {/* Independent hidden axes for combined series */}
             {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [v.toFixed(3), name]} />
-            <Legend verticalAlign="top" />
-            <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-            <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-            {combined.includes('pae') && (
+            {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+            {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#2563eb" dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />}
+            {combined.includes('pae') && !hiddenLines.includes('paeX') && (
               <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('pae') && (
+            {combined.includes('pae') && !hiddenLines.includes('paeY') && (
               <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combined.includes('rssi') && (
+            {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
               <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
+            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
+              if (hiddenLines.includes(`log_${log.id}`)) return []
+              const color = LOG_COLORS[i % LOG_COLORS.length]
+              const lbl = logLabel(log)
+              return [
+                <Line key={`${log.id}_az`} data={lcd} yAxisId="az" type="monotone" dataKey="az" name={`Az · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_el`} data={lcd} yAxisId="el" type="monotone" dataKey="el" name={`El · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+              ]
+            })}
             <ReferenceLine yAxisId="az" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
-            {currentAz != null && (
+            {!hiddenLines.includes('az') && currentAz != null && (
               <ReferenceDot yAxisId="az" x={currentTime} y={currentAz} r={4} fill="#2563eb" stroke="#fff" strokeWidth={1} isFront />
             )}
-            {currentEl != null && (
-              <ReferenceDot yAxisId="el" x={currentTime} y={currentEl} r={4} fill="#ea580c" stroke="#fff" strokeWidth={1} isFront />
+            {!hiddenLines.includes('el') && currentEl != null && (
+              <ReferenceDot yAxisId="el" x={currentTime} y={currentEl} r={4} fill="#2563eb" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
+        <ChartLegend primaryLabel={fileName} primaryColor="#2563eb" primaryDualLine lines={lines} />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}

@@ -15,7 +15,7 @@ export function ZoomControls({ onZoomIn, onZoomOut }: ZoomControlsProps) {
         title="Zoom out"
         aria-label="Zoom out"
       >
-        Zoom Out
+        −
       </button>
       <button
         type="button"
@@ -24,7 +24,7 @@ export function ZoomControls({ onZoomIn, onZoomOut }: ZoomControlsProps) {
         title="Zoom in"
         aria-label="Zoom in"
       >
-        Zoom In
+        +
       </button>
     </div>
   )

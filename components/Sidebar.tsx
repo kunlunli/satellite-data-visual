@@ -61,9 +61,11 @@ interface Props {
   fileName: string
   hasData: boolean
   onLoadNewFile: () => void
+  onManageLogs: () => void
+  logCount: number
 }
 
-export default function Sidebar({ activeView, onViewChange, fileName, hasData, onLoadNewFile }: Props) {
+export default function Sidebar({ activeView, onViewChange, fileName, hasData, onLoadNewFile, onManageLogs, logCount }: Props) {
   return (
     <aside className="app-sidebar w-48 flex flex-col h-full shrink-0">
       {/* Logo */}
@@ -117,6 +119,13 @@ export default function Sidebar({ activeView, onViewChange, fileName, hasData, o
               d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M16 12l-4-4m0 0l-4 4m4-4v12" />
           </svg>
           Load new file
+        </button>
+        <button onClick={onManageLogs} className="sidebar-manage-btn">
+          <svg style={{ width: 12, height: 12, flexShrink: 0 }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+          </svg>
+          Manage Logs{logCount > 0 ? ` (${logCount})` : ''}
         </button>
       </div>
     </aside>

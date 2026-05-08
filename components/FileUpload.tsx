@@ -3,31 +3,31 @@
 import { useCallback, useState } from 'react'
 
 interface Props {
-  onFile: (file: File) => void
+  onFiles: (files: File[]) => void
   loading: boolean
 }
 
 const SEGMENT_COUNT = 12
 
-export default function FileUpload({ onFile, loading }: Props) {
+export default function FileUpload({ onFiles, loading }: Props) {
   const [dragging, setDragging] = useState(false)
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault()
       setDragging(false)
-      const file = e.dataTransfer.files[0]
-      if (file) onFile(file)
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) onFiles(files)
     },
-    [onFile],
+    [onFiles],
   )
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0]
-      if (file) onFile(file)
+      const files = Array.from(e.target.files ?? [])
+      if (files.length > 0) onFiles(files)
     },
-    [onFile],
+    [onFiles],
   )
 
   return (
@@ -93,7 +93,7 @@ export default function FileUpload({ onFile, loading }: Props) {
           <p className="ut-subtext">
             {dragging
               ? 'INCOMING FEED DETECTED — READY TO INGEST'
-              : 'DRAG .TXT / .LOG FILE OR CLICK TO BROWSE'}
+              : 'DRAG .TXT / .LOG FILES OR CLICK TO BROWSE'}
           </p>
           <p className="ut-spec">
             FORMAT: CSV LOG (.txt / .log) · 15 COLUMNS · TIMESTAMP, AZ, EL, PAE, CS, RSSI, TX
@@ -101,7 +101,7 @@ export default function FileUpload({ onFile, loading }: Props) {
         </div>
       )}
 
-      <input type="file" accept=".txt,.log" className="hidden" onChange={handleChange} />
+      <input type="file" accept=".txt,.log,.csv" multiple className="hidden" onChange={handleChange} />
     </label>
   )
 }

@@ -1007,6 +1007,185 @@ body {
   transform: translateY(-1px);
 }
 
+.sidebar-manage-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 50%, transparent 50%);
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.sidebar-manage-btn:hover {
+  color: var(--text-bright);
+  border-color: color-mix(in srgb, var(--steel-bright) 80%, white 20%);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+
+/* ── Manage Logs modal ────────────────────────────────────────────── */
+
+.manage-logs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(7, 8, 10, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.manage-logs-modal {
+  background: var(--surface);
+  border: 1px solid var(--steel-bright);
+  border-radius: 14px;
+  padding: 24px;
+  min-width: 380px;
+  max-width: 520px;
+  width: 90vw;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+}
+
+.manage-logs-title {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--text-bright);
+  margin: 0 0 16px;
+}
+
+.manage-logs-empty {
+  font-size: 13px;
+  color: var(--text-mid);
+  margin: 0 0 16px;
+}
+
+.manage-logs-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.manage-logs-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--steel-mid) 60%, transparent 40%);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.manage-logs-item.active {
+  border-color: color-mix(in srgb, var(--amber) 60%, transparent 40%);
+  background: rgba(255, 143, 0, 0.06);
+}
+
+.manage-logs-name {
+  font-size: 12px;
+  color: var(--text-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.manage-logs-item.active .manage-logs-name {
+  color: var(--text-bright);
+}
+
+.manage-logs-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.manage-logs-active-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--amber);
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--amber) 50%, transparent 50%);
+  border-radius: 4px;
+}
+
+.manage-logs-btn {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+  border: 1px solid transparent;
+}
+
+.manage-logs-btn.switch {
+  color: var(--text-bright);
+  border-color: color-mix(in srgb, var(--steel-bright) 70%, white 30%);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.manage-logs-btn.switch:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.manage-logs-btn.remove {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.07);
+}
+
+.manage-logs-btn.remove:hover {
+  background: rgba(248, 113, 113, 0.18);
+}
+
+.manage-logs-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.manage-logs-close-btn {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 7px 18px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-mid);
+  border: 1px solid color-mix(in srgb, var(--steel-bright) 65%, white 35%);
+  background: rgba(255, 255, 255, 0.05);
+  transition: color 0.14s ease, background 0.14s ease;
+}
+
+.manage-logs-close-btn:hover {
+  color: var(--text-bright);
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .panel-card {
   background: color-mix(in srgb, var(--panel) 84%, #0f172a 16%);
   border: 1px solid color-mix(in srgb, var(--steel-mid) 70%, white 30%);
@@ -1021,6 +1200,57 @@ body {
   border-radius: 12px;
   color: color-mix(in srgb, var(--text-mid) 88%, white 12%);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Line visibility toggles ─────────────────────────────────────── */
+
+.line-toggle-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 0 8px;
+  flex-shrink: 0;
+}
+
+.line-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px 3px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
+  color: #374151;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+  user-select: none;
+}
+
+.line-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+.line-toggle-btn.off {
+  opacity: 0.42;
+  background: transparent;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #6b7280;
+}
+
+.line-toggle-btn.off:hover {
+  opacity: 0.7;
+}
+
+.line-toggle-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  flex-shrink: 0;
+  transition: background 0.15s;
 }
 
 /* ── Combine Charts bar ───────────────────────────────────────────── */
@@ -1059,6 +1289,45 @@ body {
   cursor: default;
 }
 
+.combine-logs-btn {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--amber) 35%, transparent 65%);
+  background: rgba(255, 143, 0, 0.07);
+  color: color-mix(in srgb, var(--amber) 80%, var(--text-mid) 20%);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.combine-logs-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--amber) 60%, white 40%);
+  color: var(--amber);
+  background: rgba(255, 143, 0, 0.14);
+}
+
+.combine-logs-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.log-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 .combine-dropdown {
   position: absolute;
   top: calc(100% + 5px);
@@ -1076,6 +1345,9 @@ body {
 }
 
 .combine-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: 'Inter', 'Segoe UI', sans-serif;
   font-size: 12px;
   font-weight: 500;
@@ -1092,6 +1364,23 @@ body {
 .combine-dropdown-item:hover {
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-bright);
+}
+
+.combine-dropdown-item.selected {
+  color: var(--amber);
+}
+
+.combine-dropdown-item.selected:hover {
+  color: var(--amber);
+  background: rgba(255, 143, 0, 0.1);
+}
+
+.combine-dropdown-check {
+  width: 14px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--amber);
+  text-align: center;
 }
 
 .combine-chip {
@@ -1325,3 +1614,99 @@ body {
   padding: 16px 0;
   margin: 0;
 }
+
+/* ── Chart legend + line toggle (top-right overlay) ──────────────── */
+
+.chart-legend-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid rgba(0, 0, 0, 0.13);
+  border-radius: 10px;
+  padding: 22px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.13);
+  min-width: 160px;
+  max-width: 220px;
+}
+
+.clt-hide-btn {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 20px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #9ca3af;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.clt-hide-btn:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #374151;
+}
+
+.chart-legend-collapsed {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.13);
+  border-radius: 7px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  color: #6b7280;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.chart-legend-collapsed:hover {
+  background: rgba(255, 255, 255, 1);
+  color: #374151;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.clt-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+
+.clt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+}
+
+.clt-label {
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
