@@ -906,7 +906,7 @@ import {
   LineChart, Line, ReferenceLine,
   ReferenceDot,
 } from 'recharts'
-import { getFlightTimeDomain, sliceByTime } from '@/lib/timeSeriesChartLayout'
+import { sliceByTime } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
@@ -1125,44 +1125,61 @@ function ChartLegend({
 }
 
 function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
-  const { timezone, t0Us } = useTimezone()
-  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { timezone } = useTimezone()
+  const useAbsoluteTime = timezone !== null
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const timeDomain = useMemo((): [number, number] => {
+    if (useAbsoluteTime) {
+      let min = Infinity, max = -Infinity
+      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
+      scan(data); for (const log of combinedLogs) scan(log.data)
+      return Number.isFinite(min) ? [min, max] : [0, 1]
+    }
+    let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
+    for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
+    return [0, maxEnd || 1]
+  }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
-  const allChartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
-      t: r.flightTimeMs,
-      paeX: r.pae_joint_X,
-      paeY: r.pae_joint_Y,
-      ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
-      ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
-    })),
-    [data, combined],
-  )
-  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
-  const combinedLogData = useMemo(
-    () => combinedLogs.map((log) => ({
-      log,
-      chartData: sliceByTime(
-        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, paeX: r.pae_joint_X, paeY: r.pae_joint_Y })),
-        zoomDomain[0], zoomDomain[1],
-      ),
-    })),
-    [combinedLogs, zoomDomain],
-  )
+  const allChartData = useMemo(() => {
+    const rows: Array<{ t: number; [key: string]: number }> = []
+    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
+      rows.push({
+        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+        paeX: r.pae_joint_X,
+        paeY: r.pae_joint_Y,
+        ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+        ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+      })
+    }
+    combinedLogs.forEach((log, i) => {
+      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
+        rows.push({
+          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+          [`paeX_${i}`]: r.pae_joint_X,
+          [`paeY_${i}`]: r.pae_joint_Y,
+        })
+      }
+    })
+    return rows
+  }, [data, combined, combinedLogs, useAbsoluteTime])
+  const chartData = useMemo(() => {
+    const [lo, hi] = zoomDomain
+    const buf = (hi - lo) * 0.1
+    return allChartData.filter((r) => r.t >= lo - buf && r.t <= hi + buf)
+  }, [allChartData, zoomDomain])
   // Stable PAE domain from all logs — so hiding one line or adding a combined
   // log doesn't rescale the axis and distort visible line shapes.
   const paeDomain = useMemo((): [number, number] => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
-    for (const d of chartData) { chk(d.paeX); chk(d.paeY) }
-    for (const { chartData: lcd } of combinedLogData) { for (const d of lcd) { chk(d.paeX); chk(d.paeY) } }
+    for (const r of data) { chk(r.pae_joint_X); chk(r.pae_joint_Y) }
+    for (const log of combinedLogs) { for (const r of log.data) { chk(r.pae_joint_X); chk(r.pae_joint_Y) } }
     if (!Number.isFinite(min)) return [0, 1]
     const pad = Math.max((max - min) * 0.05, 0.0001)
     return [min - pad, max + pad]
-  }, [chartData, combinedLogData])
-  const currentTime = data[currentIndex]?.flightTimeMs ?? 0
+  }, [data, combinedLogs])
+  const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
@@ -1212,13 +1229,13 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
             {combined.includes('azel') && !hiddenLines.includes('el') && (
               <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
+            {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                <Line key={`${log.id}_pX`} data={lcd} yAxisId="pae" type="monotone" dataKey="paeX" name={`PAE X · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
-                <Line key={`${log.id}_pY`} data={lcd} yAxisId="pae" type="monotone" dataKey="paeY" name={`PAE Y · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+                <Line key={`${log.id}_pX`} yAxisId="pae" type="monotone" dataKey={`paeX_${i}`} name={`PAE X · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_pY`} yAxisId="pae" type="monotone" dataKey={`paeY_${i}`} name={`PAE Y · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
               ]
             })}
             <ReferenceLine yAxisId="pae" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -1242,41 +1259,57 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
 }
 
 function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
-  const { timezone, t0Us } = useTimezone()
-  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { timezone } = useTimezone()
+  const useAbsoluteTime = timezone !== null
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const timeDomain = useMemo((): [number, number] => {
+    if (useAbsoluteTime) {
+      let min = Infinity, max = -Infinity
+      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
+      scan(data); for (const log of combinedLogs) scan(log.data)
+      return Number.isFinite(min) ? [min, max] : [0, 1]
+    }
+    let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
+    for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
+    return [0, maxEnd || 1]
+  }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
-  const allChartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
-      t: r.flightTimeMs,
-      rssi: r.rssi,
-      ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
-      ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
-    })),
-    [data, combined],
-  )
-  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
-  const combinedLogData = useMemo(
-    () => combinedLogs.map((log) => ({
-      log,
-      chartData: sliceByTime(
-        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
-        zoomDomain[0], zoomDomain[1],
-      ),
-    })),
-    [combinedLogs, zoomDomain],
-  )
+  const allChartData = useMemo(() => {
+    const rows: Array<{ t: number; [key: string]: number }> = []
+    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
+      rows.push({
+        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+        rssi: r.rssi,
+        ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+        ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+      })
+    }
+    combinedLogs.forEach((log, i) => {
+      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
+        rows.push({
+          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+          [`rssi_${i}`]: r.rssi,
+        })
+      }
+    })
+    return rows
+  }, [data, combined, combinedLogs, useAbsoluteTime])
+  const chartData = useMemo(() => {
+    const [lo, hi] = zoomDomain
+    const buf = (hi - lo) * 0.1
+    return allChartData.filter((r) => r.t >= lo - buf && r.t <= hi + buf)
+  }, [allChartData, zoomDomain])
   const rssiDomain = useMemo((): [number, number] => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
-    for (const d of chartData) chk(d.rssi)
-    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.rssi)
+    for (const r of data) chk(r.rssi)
+    for (const log of combinedLogs) for (const r of log.data) chk(r.rssi)
     if (!Number.isFinite(min)) return [0, 1]
     const pad = Math.max((max - min) * 0.05, 0.1)
     return [min - pad, max + pad]
-  }, [chartData, combinedLogData])
-  const currentTime = data[currentIndex]?.flightTimeMs ?? 0
+  }, [data, combinedLogs])
+  const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentRssi = data[currentIndex]?.rssi
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
   const toggleLine = useCallback((k: string) => setHiddenLines((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]), [])
@@ -1328,12 +1361,12 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             {combined.includes('azel') && !hiddenLines.includes('el') && (
               <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
+            {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                <Line key={`${log.id}_rssi`} data={lcd} yAxisId="rssi" type="monotone" dataKey="rssi" name={`RSSI · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_rssi`} yAxisId="rssi" type="monotone" dataKey={`rssi_${i}`} name={`RSSI · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
               ]
             })}
             <ReferenceLine yAxisId="rssi" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -1354,51 +1387,68 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
 }
 
 function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
-  const { timezone, t0Us } = useTimezone()
-  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
-  const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
+  const { timezone } = useTimezone()
+  const useAbsoluteTime = timezone !== null
+  const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
+  const timeDomain = useMemo((): [number, number] => {
+    if (useAbsoluteTime) {
+      let min = Infinity, max = -Infinity
+      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
+      scan(data); for (const log of combinedLogs) scan(log.data)
+      return Number.isFinite(min) ? [min, max] : [0, 1]
+    }
+    let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
+    for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
+    return [0, maxEnd || 1]
+  }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, AZEL_FULL_PLOT_BOUNDS)
-  const allChartData = useMemo(
-    () => data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({
-      t: r.flightTimeMs,
-      az: r.cur_az,
-      el: r.cur_el,
-      ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
-      ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
-    })),
-    [data, combined],
-  )
-  const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
-  const combinedLogData = useMemo(
-    () => combinedLogs.map((log) => ({
-      log,
-      chartData: sliceByTime(
-        log.data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
-        zoomDomain[0], zoomDomain[1],
-      ),
-    })),
-    [combinedLogs, zoomDomain],
-  )
+  const allChartData = useMemo(() => {
+    const rows: Array<{ t: number; [key: string]: number }> = []
+    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
+      rows.push({
+        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+        az: r.cur_az,
+        el: r.cur_el,
+        ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+        ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+      })
+    }
+    combinedLogs.forEach((log, i) => {
+      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
+        rows.push({
+          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+          [`az_${i}`]: r.cur_az,
+          [`el_${i}`]: r.cur_el,
+        })
+      }
+    })
+    return rows
+  }, [data, combined, combinedLogs, useAbsoluteTime])
+  const chartData = useMemo(() => {
+    const [lo, hi] = zoomDomain
+    const buf = (hi - lo) * 0.1
+    return allChartData.filter((r) => r.t >= lo - buf && r.t <= hi + buf)
+  }, [allChartData, zoomDomain])
   const azDomain = useMemo((): [number, number] => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
-    for (const d of chartData) chk(d.az)
-    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.az)
+    for (const r of data) chk(r.cur_az)
+    for (const log of combinedLogs) for (const r of log.data) chk(r.cur_az)
     if (!Number.isFinite(min)) return [0, 1]
     const pad = Math.max((max - min) * 0.05, 0.1)
     return [min - pad, max + pad]
-  }, [chartData, combinedLogData])
+  }, [data, combinedLogs])
   const elDomain = useMemo((): [number, number] => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
-    for (const d of chartData) chk(d.el)
-    for (const { chartData: lcd } of combinedLogData) for (const d of lcd) chk(d.el)
+    for (const r of data) chk(r.cur_el)
+    for (const log of combinedLogs) for (const r of log.data) chk(r.cur_el)
     if (!Number.isFinite(min)) return [0, 1]
     const pad = Math.max((max - min) * 0.05, 0.1)
     return [min - pad, max + pad]
-  }, [chartData, combinedLogData])
-  const currentTime = data[currentIndex]?.flightTimeMs ?? 0
+  }, [data, combinedLogs])
+  const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentAz = data[currentIndex]?.cur_az
   const currentEl = data[currentIndex]?.cur_el
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
@@ -1406,7 +1456,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const lines = useMemo<LineSpec[]>(() => {
     const base: LineSpec[] = [
       { key: 'az', label: 'Azimuth', color: '#2563eb', dashed: false },
-      { key: 'el', label: 'Elevation', color: '#2563eb', dashed: true },
+      { key: 'el', label: 'Elevation', color: '#ea580c', dashed: false },
     ]
     if (combined.includes('pae')) {
       base.push({ key: 'paeX', label: 'PAE X', color: '#16a34a' })
@@ -1440,7 +1490,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [v.toFixed(3), name]} />
             {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-            {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#2563eb" dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />}
+            {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
               <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
@@ -1450,13 +1500,12 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
               <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
-            {combinedLogData.flatMap(({ log, chartData: lcd }, i) => {
-              if (hiddenLines.includes(`log_${log.id}`)) return []
+            {combinedLogs.flatMap((log, i) => {
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                <Line key={`${log.id}_az`} data={lcd} yAxisId="az" type="monotone" dataKey="az" name={`Az · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
-                <Line key={`${log.id}_el`} data={lcd} yAxisId="el" type="monotone" dataKey="el" name={`El · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+                ...(!hiddenLines.includes('az') ? [<Line key={`${log.id}_az`} yAxisId="az" type="monotone" dataKey={`az_${i}`} name={`Az · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />] : []),
+                ...(!hiddenLines.includes('el') ? [<Line key={`${log.id}_el`} yAxisId="el" type="monotone" dataKey={`el_${i}`} name={`El · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />] : []),
               ]
             })}
             <ReferenceLine yAxisId="az" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
@@ -1464,11 +1513,11 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
               <ReferenceDot yAxisId="az" x={currentTime} y={currentAz} r={4} fill="#2563eb" stroke="#fff" strokeWidth={1} isFront />
             )}
             {!hiddenLines.includes('el') && currentEl != null && (
-              <ReferenceDot yAxisId="el" x={currentTime} y={currentEl} r={4} fill="#2563eb" stroke="#fff" strokeWidth={1} isFront />
+              <ReferenceDot yAxisId="el" x={currentTime} y={currentEl} r={4} fill="#ea580c" stroke="#fff" strokeWidth={1} isFront />
             )}
           </LineChart>
         </ResponsiveContainer>
-        <ChartLegend primaryLabel={fileName} primaryColor="#2563eb" primaryDualLine lines={lines} />
+        <ChartLegend primaryLabel={fileName} primaryColor="#2563eb" primaryDualLine={false} lines={lines} />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
