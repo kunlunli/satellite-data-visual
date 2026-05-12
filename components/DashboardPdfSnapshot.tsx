@@ -6,7 +6,8 @@ import SkyPlot from '@/components/SkyPlot'
 import TrackingErrorChart from '@/components/TrackingErrorChart'
 import AzElPositionChart from '@/components/AzElPositionChart'
 import RssiChart from '@/components/RssiChart'
-import type { SatelliteDataRow } from '@/lib/types'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts'
+import type { SatelliteDataRow, ViewKey } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
 
@@ -17,6 +18,7 @@ export interface DashboardPdfSnapshotProps {
   index: number
   pdfPage?: { current: number; total: number }
   reportType?: PdfReportType
+  combined?: ViewKey[]
 }
 
 /** Wide canvas; row heights tuned near A4 landscape aspect so PDF scale uses the page. */
@@ -219,9 +221,129 @@ function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   )
 }
 
+const STATIC_SAMPLE = 4
+const STATIC_MARGIN = { top: 12, right: 24, bottom: 40, left: 56 }
+const STATIC_AZEL_MARGIN = { top: 12, right: 64, bottom: 40, left: 56 }
+const STATIC_HIDDEN = { hide: true, width: 0, domain: ['auto', 'auto'] as [string, string] }
+
+function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[]; combined: ViewKey[]; height: number }) {
+  const chartData = data.filter((_, i) => i % STATIC_SAMPLE === 0).map((r) => ({
+    t: r.flightTimeMs,
+    rssi: r.rssi,
+    ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+    ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+  }))
+  let rMin = Infinity, rMax = -Infinity
+  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  const rPad = Math.max((rMax - rMin) * 0.05, 0.1)
+  const rDomain: [number, number] = Number.isFinite(rMin) ? [rMin - rPad, rMax + rPad] : [0, 1]
+  return (
+    <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartData} margin={STATIC_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
+          <YAxis yAxisId="rssi" orientation="left" domain={rDomain} tickFormatter={(v: number) => (v / 40).toFixed(1)} tick={{ fontSize: 10 }}
+            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
+          {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
+          {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
+          {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
+          {combined.includes('azel') && <YAxis yAxisId="el" {...STATIC_HIDDEN} />}
+          <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
+          {combined.includes('pae') && <Line yAxisId="paeX" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeY" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="az" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="el" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; combined: ViewKey[]; height: number }) {
+  const chartData = data.filter((_, i) => i % STATIC_SAMPLE === 0).map((r) => ({
+    t: r.flightTimeMs,
+    paeX: r.pae_joint_X,
+    paeY: r.pae_joint_Y,
+    ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+    ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
+  }))
+  let pMin = Infinity, pMax = -Infinity
+  for (const r of data) {
+    if (r.pae_joint_X < pMin) pMin = r.pae_joint_X; if (r.pae_joint_X > pMax) pMax = r.pae_joint_X
+    if (r.pae_joint_Y < pMin) pMin = r.pae_joint_Y; if (r.pae_joint_Y > pMax) pMax = r.pae_joint_Y
+  }
+  const pPad = Math.max((pMax - pMin) * 0.05, 0.0001)
+  const pDomain: [number, number] = Number.isFinite(pMin) ? [pMin - pPad, pMax + pPad] : [0, 1]
+  return (
+    <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartData} margin={STATIC_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
+          <YAxis yAxisId="pae" orientation="left" domain={pDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 10 }}
+            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
+          {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
+          {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
+          {combined.includes('azel') && <YAxis yAxisId="el" {...STATIC_HIDDEN} />}
+          <Line yAxisId="pae" type="monotone" dataKey="paeX" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
+          <Line yAxisId="pae" type="monotone" dataKey="paeY" stroke="#2563eb" strokeDasharray="5 3" dot={false} strokeWidth={2} isAnimationActive={false} />
+          {combined.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="az" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="el" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
+function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[]; combined: ViewKey[]; height: number }) {
+  const chartData = data.filter((_, i) => i % STATIC_SAMPLE === 0).map((r) => ({
+    t: r.flightTimeMs,
+    az: r.cur_az,
+    el: r.cur_el,
+    ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
+    ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+  }))
+  let azMin = Infinity, azMax = -Infinity, elMin = Infinity, elMax = -Infinity
+  for (const r of data) {
+    if (r.cur_az < azMin) azMin = r.cur_az; if (r.cur_az > azMax) azMax = r.cur_az
+    if (r.cur_el < elMin) elMin = r.cur_el; if (r.cur_el > elMax) elMax = r.cur_el
+  }
+  const azPad = Math.max((azMax - azMin) * 0.05, 0.1)
+  const elPad = Math.max((elMax - elMin) * 0.05, 0.1)
+  const azDomain: [number, number] = Number.isFinite(azMin) ? [azMin - azPad, azMax + azPad] : [0, 1]
+  const elDomain: [number, number] = Number.isFinite(elMin) ? [elMin - elPad, elMax + elPad] : [0, 1]
+  return (
+    <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
+      <ResponsiveContainer width="100%" height={height}>
+        <LineChart data={chartData} margin={STATIC_AZEL_MARGIN}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
+          <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 10 }}
+            label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
+          <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 10 }}
+            label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 11 }} />
+          {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
+          {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
+          {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
+          <Line yAxisId="az" type="monotone" dataKey="az" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+          <Line yAxisId="el" type="monotone" dataKey="el" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+          {combined.includes('pae') && <Line yAxisId="paeX" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeY" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  )
+}
+
 const DashboardPdfSnapshot = memo(
   forwardRef<HTMLDivElement, DashboardPdfSnapshotProps>(function DashboardPdfSnapshot(
-    { data, index, pdfPage, reportType = 'dashboard' },
+    { data, index, pdfPage, reportType = 'dashboard', combined = [] },
     ref,
   ) {
     const total = data.length
@@ -326,7 +448,11 @@ const DashboardPdfSnapshot = memo(
               }}
             >
               <div style={{ minWidth: 0, marginRight: -PDF_PATH_SKY_OVERLAP, position: 'relative', zIndex: 1 }}>
-                <AzElPositionChart data={data} currentIndex={index} height={singleChartH} showHeading />
+                {combined.length > 0 ? (
+                  <StaticAzElChart data={data} combined={combined} height={singleChartH} />
+                ) : (
+                  <AzElPositionChart data={data} currentIndex={index} height={singleChartH} showHeading />
+                )}
               </div>
               <div
                 className="pdf-sky-cell"
@@ -351,7 +477,11 @@ const DashboardPdfSnapshot = memo(
               </div>
             ) : null}
             <div style={{ marginTop: row ? -PDF_AFTER_METRICS : 0 }}>
-              <TrackingErrorChart data={data} currentIndex={index} height={singleChartH} showHeading />
+              {combined.length > 0 ? (
+                <StaticPaeChart data={data} combined={combined} height={singleChartH} />
+              ) : (
+                <TrackingErrorChart data={data} currentIndex={index} height={singleChartH} showHeading />
+              )}
             </div>
           </div>
         )}
@@ -364,7 +494,11 @@ const DashboardPdfSnapshot = memo(
               </div>
             ) : null}
             <div style={{ marginTop: row ? -PDF_AFTER_METRICS : 0 }}>
-              <RssiChart data={data} currentIndex={index} height={singleChartH} showHeading />
+              {combined.length > 0 ? (
+                <StaticRssiChart data={data} combined={combined} height={singleChartH} />
+              ) : (
+                <RssiChart data={data} currentIndex={index} height={singleChartH} showHeading />
+              )}
             </div>
           </div>
         )}

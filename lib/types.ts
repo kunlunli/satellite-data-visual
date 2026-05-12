@@ -1,3 +1,5 @@
+export type ViewKey = 'azel' | 'pae' | 'rssi'
+
 export interface SatelliteDataRow {
   timestamp: number
   cur_joint_Y: number

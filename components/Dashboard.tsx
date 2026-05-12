@@ -9,7 +9,7 @@ import TrackingErrorChart from './TrackingErrorChart'
 import AzElPositionChart from './AzElPositionChart'
 import RssiChart from './RssiChart'
 import { TimezonePicker } from './TimezonePicker'
-import type { SatelliteDataRow } from '@/lib/types'
+import type { SatelliteDataRow, ViewKey } from '@/lib/types'
 import { parseLogFile, formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
 import { exportDashboardPdf } from '@/lib/exportDashboardPdf'
@@ -58,6 +58,9 @@ export default function Dashboard() {
   const [pdfFrameEnd, setPdfFrameEnd] = useState('1')
   const [pdfRangeError, setPdfRangeError] = useState('')
   const [pdfReportType, setPdfReportType] = useState<PdfReportType>('dashboard')
+  const [rssiCombined, setRssiCombined] = useState<ViewKey[]>([])
+  const [paeCombined, setPaeCombined] = useState<ViewKey[]>([])
+  const [azelCombined, setAzelCombined] = useState<ViewKey[]>([])
   const [timezone, setTimezone] = useState<string | null>(null)
 
   const t0Us = useMemo(() => (data.length > 0 ? data[0].timestamp : 0), [data])
@@ -222,6 +225,7 @@ export default function Dashboard() {
         setLoadingView(null)
         setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
         setTimelinePanelOpen(true)
+        setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
       }
       if (failNames.length > 0) {
         setError(
@@ -246,6 +250,7 @@ export default function Dashboard() {
     setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
     setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
     setManageLogsOpen(false)
+    setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
   }, [])
 
   const removeLog = useCallback((id: string) => {
@@ -260,6 +265,7 @@ export default function Dashboard() {
           setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
           setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
         }
+        setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
         return newActive
       })
       return next
@@ -334,6 +340,12 @@ export default function Dashboard() {
             index={pdfExportIndex}
             pdfPage={{ current: pdfExportPdfPage.current, total: pdfExportPdfPage.total }}
             reportType={pdfReportType}
+            combined={
+              pdfReportType === 'rssi' ? rssiCombined :
+              pdfReportType === 'pae' ? paeCombined :
+              pdfReportType === 'azel' ? azelCombined :
+              undefined
+            }
           />
         </div>
       )}
@@ -681,13 +693,13 @@ export default function Dashboard() {
                 <DashboardView data={data} currentIndex={dashboardPlayIndex} isActive={activeView === 'dashboard'} />
               )}
               {mountedViews.azel && (
-                <AzElView data={data} currentIndex={azelPlayIndex} isActive={activeView === 'azel'} otherLogs={otherLogs} fileName={fileName} />
+                <AzElView data={data} currentIndex={azelPlayIndex} isActive={activeView === 'azel'} otherLogs={otherLogs} fileName={fileName} combined={azelCombined} onCombinedChange={setAzelCombined} />
               )}
               {mountedViews.pae && (
-                <PaeView data={data} currentIndex={paePlayIndex} isActive={activeView === 'pae'} otherLogs={otherLogs} fileName={fileName} />
+                <PaeView data={data} currentIndex={paePlayIndex} isActive={activeView === 'pae'} otherLogs={otherLogs} fileName={fileName} combined={paeCombined} onCombinedChange={setPaeCombined} />
               )}
               {mountedViews.rssi && (
-                <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} otherLogs={otherLogs} fileName={fileName} />
+                <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} otherLogs={otherLogs} fileName={fileName} combined={rssiCombined} onCombinedChange={setRssiCombined} />
               )}
             </div>
           )}
@@ -707,7 +719,6 @@ function FocusedView({ title, children }: { title: string; children: React.React
   )
 }
 
-type ViewKey = 'azel' | 'pae' | 'rssi'
 
 const CHART_LABELS: Record<ViewKey, string> = {
   azel: 'Az / El Position',
@@ -817,8 +828,9 @@ const PaeView = memo(function PaeView({
   isActive,
   otherLogs,
   fileName,
-}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
-  const [combined, setCombined] = useState<ViewKey[]>([])
+  combined,
+  onCombinedChange,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string; combined: ViewKey[]; onCombinedChange: (v: ViewKey[]) => void }) {
   const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
   const combinedLogs = useMemo(
     () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
@@ -833,8 +845,8 @@ const PaeView = memo(function PaeView({
       <CombineBar
         currentView="pae"
         combined={combined}
-        onAdd={(v) => setCombined((p) => [...p, v])}
-        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+        onAdd={(v) => onCombinedChange([...combined, v])}
+        onRemove={(v) => onCombinedChange(combined.filter((x) => x !== v))}
       />
       <CombineLogsBar
         otherLogs={otherLogs}
@@ -859,8 +871,9 @@ const RssiView = memo(function RssiView({
   isActive,
   otherLogs,
   fileName,
-}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
-  const [combined, setCombined] = useState<ViewKey[]>([])
+  combined,
+  onCombinedChange,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string; combined: ViewKey[]; onCombinedChange: (v: ViewKey[]) => void }) {
   const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
   const combinedLogs = useMemo(
     () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
@@ -875,8 +888,8 @@ const RssiView = memo(function RssiView({
       <CombineBar
         currentView="rssi"
         combined={combined}
-        onAdd={(v) => setCombined((p) => [...p, v])}
-        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+        onAdd={(v) => onCombinedChange([...combined, v])}
+        onRemove={(v) => onCombinedChange(combined.filter((x) => x !== v))}
       />
       <CombineLogsBar
         otherLogs={otherLogs}
@@ -901,8 +914,9 @@ const AzElView = memo(function AzElView({
   isActive,
   otherLogs,
   fileName,
-}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string }) {
-  const [combined, setCombined] = useState<ViewKey[]>([])
+  combined,
+  onCombinedChange,
+}: CP & { isActive: boolean; otherLogs: LogEntry[]; fileName?: string; combined: ViewKey[]; onCombinedChange: (v: ViewKey[]) => void }) {
   const [combinedLogIds, setCombinedLogIds] = useState<string[]>([])
   const combinedLogs = useMemo(
     () => combinedLogIds.map((id) => otherLogs.find((l) => l.id === id)).filter((l): l is LogEntry => l !== undefined),
@@ -917,8 +931,8 @@ const AzElView = memo(function AzElView({
       <CombineBar
         currentView="azel"
         combined={combined}
-        onAdd={(v) => setCombined((p) => [...p, v])}
-        onRemove={(v) => setCombined((p) => p.filter((x) => x !== v))}
+        onAdd={(v) => onCombinedChange([...combined, v])}
+        onRemove={(v) => onCombinedChange(combined.filter((x) => x !== v))}
       />
       <CombineLogsBar
         otherLogs={otherLogs}
