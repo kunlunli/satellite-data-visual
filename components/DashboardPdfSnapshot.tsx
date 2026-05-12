@@ -10,10 +10,13 @@ import type { SatelliteDataRow } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
 
+export type PdfReportType = 'dashboard' | 'azel' | 'pae' | 'rssi'
+
 export interface DashboardPdfSnapshotProps {
   data: SatelliteDataRow[]
   index: number
   pdfPage?: { current: number; total: number }
+  reportType?: PdfReportType
 }
 
 /** Wide canvas; row heights tuned near A4 landscape aspect so PDF scale uses the page. */
@@ -37,7 +40,7 @@ function PdfSkyMetricsPanel({ row, width }: { row: SatelliteDataRow; width: numb
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°') },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°') },
-    { label: 'RSSI', value: formatScrubMetric(row.rssi, 1) },
+    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm') },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°') },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°') },
   ]
@@ -87,7 +90,7 @@ function PdfTimelineMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#60a5fa' },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#fb923c' },
-    { label: 'RSSI', value: formatScrubMetric(row.rssi, 1), color: '#c084fc' },
+    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm'), color: '#c084fc' },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#60a5fa' },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°'), color: '#ea580c' },
   ]
@@ -134,15 +137,98 @@ function PdfTimelineMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   )
 }
 
+const REPORT_LABELS: Record<PdfReportType, string> = {
+  dashboard: 'Dashboard',
+  azel: 'AZ / EL Position',
+  pae: 'Pointing Accuracy Error',
+  rssi: 'RSSI',
+}
+
+function PdfAzElMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
+  const cols = [
+    { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#60a5fa' },
+    { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#fb923c' },
+    { label: 'Target Az', value: formatScrubMetric(row.target_az, 3, '°'), color: '#93c5fd' },
+    { label: 'Target El', value: formatScrubMetric(row.target_el, 3, '°'), color: '#fdba74' },
+  ]
+  const w = SNAPSHOT_W
+  const colW = w / cols.length
+  return (
+    <svg width="100%" height="26" viewBox={`0 0 ${w} 26`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <rect x={0.5} y={0.5} width={w - 1} height={25} fill="#f8fafc" stroke="#e2e8f0" strokeWidth={1} rx={3} />
+      {cols.map((c, i) => {
+        const x = i * colW + 10
+        return (
+          <g key={c.label}>
+            <text x={x} y={9} fontSize={7.5} fontWeight={600} fontFamily="system-ui,Segoe UI,sans-serif" fill="#546080" letterSpacing="0.06em">{c.label.toUpperCase()}</text>
+            <text x={x} y={21} fontSize={11.5} fontWeight={600} fontFamily="'Segoe UI',system-ui,sans-serif" fill={c.color}>{c.value}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+function PdfPaeMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
+  const cols = [
+    { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#60a5fa' },
+    { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°'), color: '#ea580c' },
+    { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#94a3b8' },
+    { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#94a3b8' },
+  ]
+  const w = SNAPSHOT_W
+  const colW = w / cols.length
+  return (
+    <svg width="100%" height="26" viewBox={`0 0 ${w} 26`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <rect x={0.5} y={0.5} width={w - 1} height={25} fill="#f8fafc" stroke="#e2e8f0" strokeWidth={1} rx={3} />
+      {cols.map((c, i) => {
+        const x = i * colW + 10
+        return (
+          <g key={c.label}>
+            <text x={x} y={9} fontSize={7.5} fontWeight={600} fontFamily="system-ui,Segoe UI,sans-serif" fill="#546080" letterSpacing="0.06em">{c.label.toUpperCase()}</text>
+            <text x={x} y={21} fontSize={11.5} fontWeight={600} fontFamily="'Segoe UI',system-ui,sans-serif" fill={c.color}>{c.value}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
+  const cols = [
+    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm'), color: '#c084fc' },
+    { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#94a3b8' },
+    { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#94a3b8' },
+    { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#94a3b8' },
+  ]
+  const w = SNAPSHOT_W
+  const colW = w / cols.length
+  return (
+    <svg width="100%" height="26" viewBox={`0 0 ${w} 26`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <rect x={0.5} y={0.5} width={w - 1} height={25} fill="#f8fafc" stroke="#e2e8f0" strokeWidth={1} rx={3} />
+      {cols.map((c, i) => {
+        const x = i * colW + 10
+        return (
+          <g key={c.label}>
+            <text x={x} y={9} fontSize={7.5} fontWeight={600} fontFamily="system-ui,Segoe UI,sans-serif" fill="#546080" letterSpacing="0.06em">{c.label.toUpperCase()}</text>
+            <text x={x} y={21} fontSize={11.5} fontWeight={600} fontFamily="'Segoe UI',system-ui,sans-serif" fill={c.color}>{c.value}</text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
 const DashboardPdfSnapshot = memo(
   forwardRef<HTMLDivElement, DashboardPdfSnapshotProps>(function DashboardPdfSnapshot(
-    { data, index, pdfPage },
+    { data, index, pdfPage, reportType = 'dashboard' },
     ref,
   ) {
     const total = data.length
     const t = data[index]?.flightTimeMs ?? 0
     const row = data[index]
     const pdfBit = pdfPage != null ? `PDF ${pdfPage.current}/${pdfPage.total} · ` : ''
+    const reportLabel = REPORT_LABELS[reportType]
 
     const skyInner = 420
     /** Must match `SkyPlot` `compact` gutter (see SkyPlot.tsx) so the cell is not narrower than the SVG. */
@@ -151,6 +237,8 @@ const DashboardPdfSnapshot = memo(
     const pathH = skyOuter + SKY_METRICS_H + SKY_METRICS_GAP
     const azElH = 340
     const bottomH = 398
+
+    const singleChartH = 920
 
     return (
       <div
@@ -166,94 +254,120 @@ const DashboardPdfSnapshot = memo(
         }}
       >
         <div className="pdf-export-header">
-          Intellian · Dashboard · {pdfBit}sample {index + 1}/{total} · {formatFlightTime(t)}
+          Intellian · {reportLabel} · {pdfBit}sample {index + 1}/{total} · {formatFlightTime(t)}
         </div>
-        <div
-          className="pdf-export-charts"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0,
-            minWidth: 0,
-            overflow: 'visible',
-          }}
-        >
-          {row ? (
-            <div style={{ marginBottom: -PDF_METRICS_UNDERLAP }}>
-              <PdfTimelineMetricsBarSvg row={row} />
-            </div>
-          ) : null}
 
-          <div
-            style={{
-              marginTop: row ? -PDF_AFTER_METRICS : 0,
-              display: 'grid',
-              gridTemplateColumns: `minmax(0, 1fr) ${skyOuter}px`,
-              columnGap: 0,
-              alignItems: 'stretch',
-              overflow: 'visible',
-            }}
-          >
+        {reportType === 'dashboard' && (
+          <div className="pdf-export-charts" style={{ display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0, overflow: 'visible' }}>
+            {row ? (
+              <div style={{ marginBottom: -PDF_METRICS_UNDERLAP }}>
+                <PdfTimelineMetricsBarSvg row={row} />
+              </div>
+            ) : null}
             <div
               style={{
-                minWidth: 0,
-                marginRight: -PDF_PATH_SKY_OVERLAP,
-                position: 'relative',
-                zIndex: 1,
-              }}
-            >
-              <TrackingPathChart
-                data={data}
-                currentIndex={index}
-                height={pathH}
-                compactExport
-              />
-            </div>
-            <div
-              className="pdf-sky-cell"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                gap: SKY_METRICS_GAP,
-                width: skyOuter,
-                minWidth: skyOuter,
-                maxWidth: skyOuter,
-                marginLeft: -PDF_PATH_SKY_OVERLAP,
-                position: 'relative',
-                zIndex: 2,
+                marginTop: row ? -PDF_AFTER_METRICS : 0,
+                display: 'grid',
+                gridTemplateColumns: `minmax(0, 1fr) ${skyOuter}px`,
+                columnGap: 0,
+                alignItems: 'stretch',
                 overflow: 'visible',
               }}
             >
-              {row && <PdfSkyMetricsPanel row={row} width={skyOuter} />}
-              <SkyPlot data={data} currentIndex={index} size={skyInner} compact />
+              <div style={{ minWidth: 0, marginRight: -PDF_PATH_SKY_OVERLAP, position: 'relative', zIndex: 1 }}>
+                <TrackingPathChart data={data} currentIndex={index} height={pathH} compactExport />
+              </div>
+              <div
+                className="pdf-sky-cell"
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
+                  gap: SKY_METRICS_GAP, width: skyOuter, minWidth: skyOuter, maxWidth: skyOuter,
+                  marginLeft: -PDF_PATH_SKY_OVERLAP, position: 'relative', zIndex: 2, overflow: 'visible',
+                }}
+              >
+                {row && <PdfSkyMetricsPanel row={row} width={skyOuter} />}
+                <SkyPlot data={data} currentIndex={index} size={skyInner} compact />
+              </div>
+            </div>
+            <div style={{ marginTop: -PDF_ROW_OVERLAP, position: 'relative', zIndex: 3 }}>
+              <AzElPositionChart data={data} currentIndex={index} height={azElH} showHeading />
+            </div>
+            <div
+              style={{
+                marginTop: -PDF_ROW_OVERLAP, position: 'relative', zIndex: 4,
+                display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 0, alignItems: 'stretch',
+              }}
+            >
+              <div style={{ marginRight: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 1 }}>
+                <TrackingErrorChart data={data} currentIndex={index} height={bottomH} showHeading />
+              </div>
+              <div style={{ marginLeft: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 2 }}>
+                <RssiChart data={data} currentIndex={index} height={bottomH} showHeading />
+              </div>
             </div>
           </div>
+        )}
 
-          <div style={{ marginTop: -PDF_ROW_OVERLAP, position: 'relative', zIndex: 3 }}>
-            <AzElPositionChart data={data} currentIndex={index} height={azElH} showHeading />
+        {reportType === 'azel' && (
+          <div className="pdf-export-charts" style={{ display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0, overflow: 'visible' }}>
+            {row ? (
+              <div style={{ marginBottom: -PDF_METRICS_UNDERLAP }}>
+                <PdfAzElMetricsBarSvg row={row} />
+              </div>
+            ) : null}
+            <div
+              style={{
+                marginTop: row ? -PDF_AFTER_METRICS : 0,
+                display: 'grid',
+                gridTemplateColumns: `minmax(0, 1fr) ${skyOuter}px`,
+                columnGap: 0,
+                alignItems: 'stretch',
+                overflow: 'visible',
+              }}
+            >
+              <div style={{ minWidth: 0, marginRight: -PDF_PATH_SKY_OVERLAP, position: 'relative', zIndex: 1 }}>
+                <AzElPositionChart data={data} currentIndex={index} height={singleChartH} showHeading />
+              </div>
+              <div
+                className="pdf-sky-cell"
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start',
+                  gap: SKY_METRICS_GAP, width: skyOuter, minWidth: skyOuter, maxWidth: skyOuter,
+                  marginLeft: -PDF_PATH_SKY_OVERLAP, position: 'relative', zIndex: 2, overflow: 'visible',
+                }}
+              >
+                {row && <PdfSkyMetricsPanel row={row} width={skyOuter} />}
+                <SkyPlot data={data} currentIndex={index} size={skyInner} compact />
+              </div>
+            </div>
           </div>
+        )}
 
-          <div
-            style={{
-              marginTop: -PDF_ROW_OVERLAP,
-              position: 'relative',
-              zIndex: 4,
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
-              columnGap: 0,
-              alignItems: 'stretch',
-            }}
-          >
-            <div style={{ marginRight: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 1 }}>
-              <TrackingErrorChart data={data} currentIndex={index} height={bottomH} showHeading />
-            </div>
-            <div style={{ marginLeft: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 2 }}>
-              <RssiChart data={data} currentIndex={index} height={bottomH} showHeading />
+        {reportType === 'pae' && (
+          <div className="pdf-export-charts" style={{ display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0, overflow: 'visible' }}>
+            {row ? (
+              <div style={{ marginBottom: -PDF_METRICS_UNDERLAP }}>
+                <PdfPaeMetricsBarSvg row={row} />
+              </div>
+            ) : null}
+            <div style={{ marginTop: row ? -PDF_AFTER_METRICS : 0 }}>
+              <TrackingErrorChart data={data} currentIndex={index} height={singleChartH} showHeading />
             </div>
           </div>
-        </div>
+        )}
+
+        {reportType === 'rssi' && (
+          <div className="pdf-export-charts" style={{ display: 'flex', flexDirection: 'column', gap: 0, minWidth: 0, overflow: 'visible' }}>
+            {row ? (
+              <div style={{ marginBottom: -PDF_METRICS_UNDERLAP }}>
+                <PdfRssiMetricsBarSvg row={row} />
+              </div>
+            ) : null}
+            <div style={{ marginTop: row ? -PDF_AFTER_METRICS : 0 }}>
+              <RssiChart data={data} currentIndex={index} height={singleChartH} showHeading />
+            </div>
+          </div>
+        )}
       </div>
     )
   }),

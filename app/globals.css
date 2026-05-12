@@ -559,6 +559,44 @@ body {
   cursor: not-allowed;
 }
 
+.pdf-report-type-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.pdf-report-type-option {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border-radius: 6px;
+  border: 1px solid var(--steel-mid);
+  background: transparent;
+  color: var(--text-mid);
+  font-size: 11px;
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+  user-select: none;
+}
+
+.pdf-report-type-option input[type="radio"] {
+  display: none;
+}
+
+.pdf-report-type-option:hover {
+  border-color: color-mix(in srgb, var(--amber) 55%, white 45%);
+  color: var(--text-bright);
+}
+
+.pdf-report-type-option.selected {
+  border-color: var(--amber);
+  background: linear-gradient(180deg, rgba(255, 143, 0, 0.18), rgba(255, 143, 0, 0.07));
+  color: var(--amber);
+}
+
 /* PDF export snapshot: tighter cards (overrides Tailwind padding in nested charts) */
 .pdf-export-snapshot .pdf-export-header {
   font-family: 'Inter', 'Segoe UI', sans-serif;
@@ -1421,6 +1459,10 @@ body {
   opacity: 1;
 }
 
+.primary-log-chip {
+  opacity: 0.85;
+  cursor: default;
+}
 
 /* ── Timezone picker button ───────────────────────────────────────── */
 

@@ -10,6 +10,8 @@ export interface ExportDashboardPdfArgs {
   renderFrame: (dataRowIndex: number, pdfPage: number, pdfTotal: number) => void
   baseFileName: string
   onProgress: (current: number, total: number) => void
+  /** Suffix appended before ".pdf" in the saved filename (default: "dashboard-snapshots"). */
+  filenameSuffix?: string
 }
 
 const PX_TO_MM = 25.4 / 96
@@ -195,6 +197,7 @@ export async function exportDashboardPdf({
   renderFrame,
   baseFileName,
   onProgress,
+  filenameSuffix = 'dashboard-snapshots',
 }: ExportDashboardPdfArgs): Promise<void> {
   if (indices.length === 0) return
 
@@ -222,5 +225,5 @@ export async function exportDashboardPdf({
     await addSnapshotPage(pdf, element, pageW, pageH, margin)
   }
 
-  pdf.save(`${safeBase}-dashboard-snapshots.pdf`)
+  pdf.save(`${safeBase}-${filenameSuffix}.pdf`)
 }

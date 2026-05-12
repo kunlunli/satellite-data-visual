@@ -13,7 +13,7 @@ import type { SatelliteDataRow } from '@/lib/types'
 import { parseLogFile, formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
 import { exportDashboardPdf } from '@/lib/exportDashboardPdf'
-import DashboardPdfSnapshot from '@/components/DashboardPdfSnapshot'
+import DashboardPdfSnapshot, { type PdfReportType } from '@/components/DashboardPdfSnapshot'
 import { TimezoneContext } from '@/lib/timezoneContext'
 import { formatWallClock, formatWallClockFull } from '@/lib/formatWallTime'
 
@@ -57,6 +57,7 @@ export default function Dashboard() {
   const [pdfFrameStart, setPdfFrameStart] = useState('1')
   const [pdfFrameEnd, setPdfFrameEnd] = useState('1')
   const [pdfRangeError, setPdfRangeError] = useState('')
+  const [pdfReportType, setPdfReportType] = useState<PdfReportType>('dashboard')
   const [timezone, setTimezone] = useState<string | null>(null)
 
   const t0Us = useMemo(() => (data.length > 0 ? data[0].timestamp : 0), [data])
@@ -95,8 +96,15 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', onKey)
   }, [pdfRangeModalOpen, closePdfRangeModal])
 
+  const PDF_REPORT_SUFFIXES: Record<PdfReportType, string> = {
+    dashboard: 'dashboard-snapshots',
+    azel: 'azel-report',
+    pae: 'pae-report',
+    rssi: 'rssi-report',
+  }
+
   const runPdfExport = useCallback(
-    async (indices: number[]) => {
+    async (indices: number[], reportType: PdfReportType) => {
       if (data.length === 0 || indices.length === 0) return
       const n = indices.length
       if (n > 250) {
@@ -131,6 +139,7 @@ export default function Dashboard() {
           },
           baseFileName: base,
           onProgress: (cur, total) => setPdfExportProgress({ cur, total }),
+          filenameSuffix: PDF_REPORT_SUFFIXES[reportType],
         })
       } catch (e) {
         console.error(e)
@@ -140,6 +149,7 @@ export default function Dashboard() {
         setPdfExportProgress({ cur: 0, total: 0 })
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [data.length, fileName],
   )
 
@@ -176,8 +186,8 @@ export default function Dashboard() {
     for (let i = i0; i <= i1; i++) indices.push(i)
     setPdfRangeModalOpen(false)
     setPdfRangeError('')
-    void runPdfExport(indices)
-  }, [data, pdfFrameStart, pdfFrameEnd, runPdfExport])
+    void runPdfExport(indices, pdfReportType)
+  }, [data, pdfFrameStart, pdfFrameEnd, pdfReportType, runPdfExport])
 
   const handleFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) return
@@ -305,7 +315,7 @@ export default function Dashboard() {
       {pdfExporting && (
         <div className="pdf-export-overlay" role="status" aria-live="polite">
           <div className="pdf-export-overlay-inner">
-            Exporting dashboard PDF
+            Exporting {pdfReportType === 'dashboard' ? 'Dashboard' : pdfReportType === 'azel' ? 'AZ / EL' : pdfReportType === 'pae' ? 'PAE' : 'RSSI'} PDF
             <div className="pdf-export-overlay-detail">
               Page {pdfExportProgress.cur} / {pdfExportProgress.total}
             </div>
@@ -323,6 +333,7 @@ export default function Dashboard() {
             data={data}
             index={pdfExportIndex}
             pdfPage={{ current: pdfExportPdfPage.current, total: pdfExportPdfPage.total }}
+            reportType={pdfReportType}
           />
         </div>
       )}
@@ -340,7 +351,29 @@ export default function Dashboard() {
             aria-labelledby="pdf-range-modal-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="pdf-range-modal-title">Export PDF — sample range</h2>
+            <h2 id="pdf-range-modal-title">Export PDF</h2>
+            <div className="pdf-range-modal-field">
+              <label>Report type</label>
+              <div className="pdf-report-type-group">
+                {([
+                  { value: 'dashboard', label: 'Dashboard' },
+                  { value: 'azel', label: 'AZ / EL' },
+                  { value: 'pae', label: 'PAE' },
+                  { value: 'rssi', label: 'RSSI' },
+                ] as { value: PdfReportType; label: string }[]).map(({ value, label }) => (
+                  <label key={value} className={`pdf-report-type-option${pdfReportType === value ? ' selected' : ''}`}>
+                    <input
+                      type="radio"
+                      name="pdf-report-type"
+                      value={value}
+                      checked={pdfReportType === value}
+                      onChange={() => setPdfReportType(value)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
             <p className="pdf-range-modal-desc">
               Enter the first and last sample by number, using the same 1-based count as the timeline
               (e.g. <span className="font-mono text-[11px]">127 / 5000</span> means sample 127 of 5000).
@@ -583,7 +616,7 @@ export default function Dashboard() {
                   <div className="timeline-float-metric">
                     <span className="timeline-float-metric-label">RSSI</span>
                     <span className="timeline-float-metric-value accent-rssi">
-                      {formatScrubMetric(scrubRow.rssi, 1)}
+                      {formatScrubMetric(scrubRow.rssi / 40, 2, ' dBm')}
                     </span>
                   </div>
                   <div className="timeline-float-metric">
@@ -808,6 +841,8 @@ const PaeView = memo(function PaeView({
         combinedLogIds={combinedLogIds}
         onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
         onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+        primaryFileName={fileName}
+        primaryColor="#2563eb"
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="Pointing Accuracy Error">
@@ -848,6 +883,8 @@ const RssiView = memo(function RssiView({
         combinedLogIds={combinedLogIds}
         onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
         onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+        primaryFileName={fileName}
+        primaryColor="#7c3aed"
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="RSSI">
@@ -888,6 +925,8 @@ const AzElView = memo(function AzElView({
         combinedLogIds={combinedLogIds}
         onAdd={(id) => setCombinedLogIds((p) => [...p, id])}
         onRemove={(id) => setCombinedLogIds((p) => p.filter((x) => x !== id))}
+        primaryFileName={fileName}
+        primaryColor="#2563eb"
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <FocusedView title="Azimuth & Elevation">
@@ -971,11 +1010,15 @@ function CombineLogsBar({
   combinedLogIds,
   onAdd,
   onRemove,
+  primaryFileName,
+  primaryColor = '#6b7280',
 }: {
   otherLogs: LogEntry[]
   combinedLogIds: string[]
   onAdd: (id: string) => void
   onRemove: (id: string) => void
+  primaryFileName?: string
+  primaryColor?: string
 }) {
   const [open, setOpen] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
@@ -1025,6 +1068,12 @@ function CombineLogsBar({
           </div>
         )}
       </div>
+      {primaryFileName && (
+        <span className="combine-chip log-chip primary-log-chip">
+          <span className="log-chip-dot" style={{ background: primaryColor }} />
+          {primaryFileName.replace(/\.[^.]+$/, '').slice(0, 22)}
+        </span>
+      )}
       {combinedLogIds.map((id, i) => {
         const log = otherLogs.find((l) => l.id === id)
         if (!log) return null
@@ -1124,6 +1173,26 @@ function ChartLegend({
   )
 }
 
+/**
+ * Returns a function that binary-searches `rows` (sorted by `getT`) for the
+ * row whose time is nearest to the queried `t`. Used to merge multi-log series
+ * into a single data array so Recharts shows all values in one tooltip.
+ */
+function makeNearestRowFn<R>(rows: R[], getT: (r: R) => number): (t: number) => R | undefined {
+  const sorted = [...rows].sort((a, b) => getT(a) - getT(b))
+  return (t: number) => {
+    if (sorted.length === 0) return undefined
+    let lo = 0, hi = sorted.length - 1
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (getT(sorted[mid]) < t) lo = mid + 1
+      else hi = mid
+    }
+    if (lo > 0 && Math.abs(getT(sorted[lo - 1]) - t) < Math.abs(getT(sorted[lo]) - t)) lo--
+    return sorted[lo]
+  }
+}
+
 function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
   const { timezone } = useTimezone()
   const useAbsoluteTime = timezone !== null
@@ -1131,10 +1200,10 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
   const timeDomain = useMemo((): [number, number] => {
     if (useAbsoluteTime) {
-      let min = Infinity, max = -Infinity
-      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
-      scan(data); for (const log of combinedLogs) scan(log.data)
-      return Number.isFinite(min) ? [min, max] : [0, 1]
+      // Combined logs are aligned by flight time, not absolute time, so only
+      // use the primary log's absolute range for the x-axis domain.
+      if (data.length === 0) return [0, 1]
+      return [data[0].timestamp / 1000, data[data.length - 1].timestamp / 1000]
     }
     let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
@@ -1142,26 +1211,27 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
   const allChartData = useMemo(() => {
-    const rows: Array<{ t: number; [key: string]: number }> = []
-    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
-      rows.push({
-        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+    const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
+    // Always index combined logs by flightTimeMs so logs from different calendar
+    // dates are aligned by their position in the pass, not absolute timestamp.
+    const combinedNNs = combinedLogs.map((log) =>
+      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+    )
+    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+      const t = getT(r)
+      const row: { t: number; [k: string]: number } = {
+        t,
         paeX: r.pae_joint_X,
         paeY: r.pae_joint_Y,
         ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
         ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
-      })
-    }
-    combinedLogs.forEach((log, i) => {
-      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
-        rows.push({
-          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
-          [`paeX_${i}`]: r.pae_joint_X,
-          [`paeY_${i}`]: r.pae_joint_Y,
-        })
       }
+      combinedNNs.forEach((nn, i) => {
+        const cr = nn(r.flightTimeMs)
+        if (cr) { row[`paeX_${i}`] = cr.pae_joint_X; row[`paeY_${i}`] = cr.pae_joint_Y }
+      })
+      return row
     })
-    return rows
   }, [data, combined, combinedLogs, useAbsoluteTime])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
@@ -1265,10 +1335,8 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
   const timeDomain = useMemo((): [number, number] => {
     if (useAbsoluteTime) {
-      let min = Infinity, max = -Infinity
-      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
-      scan(data); for (const log of combinedLogs) scan(log.data)
-      return Number.isFinite(min) ? [min, max] : [0, 1]
+      if (data.length === 0) return [0, 1]
+      return [data[0].timestamp / 1000, data[data.length - 1].timestamp / 1000]
     }
     let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
@@ -1276,24 +1344,24 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
   const allChartData = useMemo(() => {
-    const rows: Array<{ t: number; [key: string]: number }> = []
-    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
-      rows.push({
-        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+    const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
+    const combinedNNs = combinedLogs.map((log) =>
+      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+    )
+    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+      const t = getT(r)
+      const row: { t: number; [k: string]: number } = {
+        t,
         rssi: r.rssi,
         ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
         ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
-      })
-    }
-    combinedLogs.forEach((log, i) => {
-      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
-        rows.push({
-          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
-          [`rssi_${i}`]: r.rssi,
-        })
       }
+      combinedNNs.forEach((nn, i) => {
+        const cr = nn(r.flightTimeMs)
+        if (cr) row[`rssi_${i}`] = cr.rssi
+      })
+      return row
     })
-    return rows
   }, [data, combined, combinedLogs, useAbsoluteTime])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
@@ -1396,10 +1464,8 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, 0, timezone) : formatFlightTime(v), [timezone])
   const timeDomain = useMemo((): [number, number] => {
     if (useAbsoluteTime) {
-      let min = Infinity, max = -Infinity
-      const scan = (rows: typeof data) => { if (rows.length > 0) { const s = rows[0].timestamp / 1000; const e = rows[rows.length - 1].timestamp / 1000; if (s < min) min = s; if (e > max) max = e } }
-      scan(data); for (const log of combinedLogs) scan(log.data)
-      return Number.isFinite(min) ? [min, max] : [0, 1]
+      if (data.length === 0) return [0, 1]
+      return [data[0].timestamp / 1000, data[data.length - 1].timestamp / 1000]
     }
     let maxEnd = data.length > 0 ? data[data.length - 1].flightTimeMs : 0
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
@@ -1407,26 +1473,25 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, AZEL_FULL_PLOT_BOUNDS)
   const allChartData = useMemo(() => {
-    const rows: Array<{ t: number; [key: string]: number }> = []
-    for (const r of data.filter((_, i) => i % FULL_SAMPLE === 0)) {
-      rows.push({
-        t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
+    const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
+    const combinedNNs = combinedLogs.map((log) =>
+      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+    )
+    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+      const t = getT(r)
+      const row: { t: number; [k: string]: number } = {
+        t,
         az: r.cur_az,
         el: r.cur_el,
         ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
         ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
-      })
-    }
-    combinedLogs.forEach((log, i) => {
-      for (const r of log.data.filter((_, idx) => idx % FULL_SAMPLE === 0)) {
-        rows.push({
-          t: useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs,
-          [`az_${i}`]: r.cur_az,
-          [`el_${i}`]: r.cur_el,
-        })
       }
+      combinedNNs.forEach((nn, i) => {
+        const cr = nn(r.flightTimeMs)
+        if (cr) { row[`az_${i}`] = cr.cur_az; row[`el_${i}`] = cr.cur_el }
+      })
+      return row
     })
-    return rows
   }, [data, combined, combinedLogs, useAbsoluteTime])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
