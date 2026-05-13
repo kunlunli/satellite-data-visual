@@ -23,6 +23,7 @@ import {
   SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
   sliceByTime,
+  makeTimeTicks,
 } from '@/lib/timeSeriesChartLayout'
 import { SyncPadRightYAxis } from '@/components/SyncPadRightYAxis'
 import { useChartZoom } from '@/lib/useChartZoom'
@@ -34,11 +35,12 @@ interface Props {
   currentIndex: number
   height?: number
   showHeading?: boolean
+  forPdf?: boolean
 }
 
 const SAMPLE = 4
 
-function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading = true }: Props) {
+function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading = true, forPdf = false }: Props) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
@@ -51,9 +53,18 @@ function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
+  const timeTicks = useMemo(
+    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], 10 * 60 * 1000),
+    [zoomDomain],
+  )
+
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
+
+  const tickSz = forPdf ? 22 : 14
+  const labelSz = forPdf ? 24 : 16
+  const axisPad = forPdf ? SYNCED_LEFT_Y_AXIS_WIDTH + 20 : SYNCED_LEFT_Y_AXIS_WIDTH
 
   return (
     <div className="relative bg-white rounded-lg p-3 shadow-sm">
@@ -65,31 +76,32 @@ function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading
       <div ref={containerRef}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={{ ...SYNCED_TIME_CHART_MARGIN }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis
             dataKey="t"
             type="number"
             domain={zoomDomain}
+            ticks={timeTicks}
             allowDataOverflow
             tickFormatter={fmtTick}
-            tick={{ fontSize: 13 }}
-            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
+            tick={{ fontSize: tickSz }}
+            label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: labelSz }}
           />
           <YAxis
             yAxisId="left"
             orientation="left"
-            width={SYNCED_LEFT_Y_AXIS_WIDTH}
+            width={axisPad}
             domain={['auto', 'auto']}
             tickFormatter={(v: number) => v.toFixed(2)}
-            tick={{ fontSize: 13 }}
-            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
+            tick={{ fontSize: tickSz }}
+            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 12, fontSize: labelSz }}
           />
           <SyncPadRightYAxis />
           <Tooltip
             labelFormatter={(v) => fmtTooltip(Number(v))}
             formatter={(v: number, name: string) => [v.toFixed(4) + '°', name]}
           />
-          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 13 }} />
+          <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: tickSz }} />
           <Line yAxisId="left" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <Line yAxisId="left" type="monotone" dataKey="paeY" name="PAE Y" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <ReferenceLine yAxisId="left" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />

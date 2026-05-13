@@ -62,3 +62,56 @@ export function getFlightTimeDomain(data: SatelliteDataRow[]): [number, number] 
   if (data.length === 0) return [0, 1]
   return [data[0].flightTimeMs, data[data.length - 1].flightTimeMs]
 }
+
+/**
+ * Generates tick values spaced `interval` apart across [lo, hi], always
+ * including lo and hi so the axis has labels even when the range is shorter
+ * than one interval.  Start/end are omitted only when they would fall within
+ * 15 % of the interval from an existing interval-aligned tick (to prevent
+ * label collision).
+ * Works for both flightTimeMs (interval in ms) and Unix-seconds (interval in s).
+ */
+export function makeTimeTicks(lo: number, hi: number, interval: number): number[] {
+  if (hi <= lo) return [lo, hi]
+  if (interval <= 0) return [lo, hi]
+
+  const first = Math.ceil(lo / interval) * interval
+  const intervalTicks: number[] = []
+  for (let t = first; t <= hi; t += interval) intervalTicks.push(t)
+
+  // No interval ticks fit — just show start and end.
+  if (intervalTicks.length === 0) return [lo, hi]
+
+  const minGap = interval * 0.15
+  const result: number[] = []
+
+  if (intervalTicks[0] - lo > minGap) result.push(lo)
+  result.push(...intervalTicks)
+  if (hi - intervalTicks[intervalTicks.length - 1] > minGap) result.push(hi)
+
+  return result
+}
+
+/** Convert raw RSSI sensor value to dBm. */
+export function rssiToDbm(raw: number): number {
+  return raw / 42 - 88.81
+}
+
+/**
+ * Generates raw-RSSI tick values every 2 dBm.
+ * Ticks are placed at round dBm boundaries and converted back to raw so
+ * the axis (stored in raw units) labels display as round dBm numbers.
+ */
+export function makeRssiTicks(minRaw: number, maxRaw: number): number[] {
+  if (!Number.isFinite(minRaw) || !Number.isFinite(maxRaw)) return []
+  const minDbm = rssiToDbm(minRaw)
+  const maxDbm = rssiToDbm(maxRaw)
+  const interval = 2 // 2 dBm
+  const firstDbm = Math.floor(minDbm / interval) * interval
+  const lastDbm = Math.ceil(maxDbm / interval) * interval
+  const ticks: number[] = []
+  for (let dbm = firstDbm; dbm <= lastDbm; dbm += interval) {
+    ticks.push((dbm + 88.81) * 42)
+  }
+  return ticks
+}

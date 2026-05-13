@@ -160,7 +160,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
       <div ref={compactExport ? undefined : containerRef} className={compactExport ? undefined : 'flex-1 min-h-0'}>
       <ResponsiveContainer width="100%" height={compactExport ? height : '100%'} className={compactExport ? 'pdf-recharts-fill' : undefined}>
         <ScatterChart margin={chartMargin}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis
             dataKey="az"
             type="number"

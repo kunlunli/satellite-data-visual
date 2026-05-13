@@ -10,6 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import type { SatelliteDataRow, ViewKey } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
+import { makeTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
 
 export type PdfReportType = 'dashboard' | 'azel' | 'pae' | 'rssi'
 
@@ -42,7 +43,7 @@ function PdfSkyMetricsPanel({ row, width }: { row: SatelliteDataRow; width: numb
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°') },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°') },
-    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm') },
+    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm') },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°') },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°') },
   ]
@@ -92,7 +93,7 @@ function PdfTimelineMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#60a5fa' },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#fb923c' },
-    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm'), color: '#c084fc' },
+    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm'), color: '#c084fc' },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#60a5fa' },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°'), color: '#ea580c' },
   ]
@@ -198,7 +199,7 @@ function PdfPaeMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
 
 function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   const cols = [
-    { label: 'RSSI', value: formatScrubMetric(row.rssi / 40, 2, ' dBm'), color: '#c084fc' },
+    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm'), color: '#c084fc' },
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#94a3b8' },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#94a3b8' },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#94a3b8' },
@@ -222,9 +223,11 @@ function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
 }
 
 const STATIC_SAMPLE = 4
-const STATIC_MARGIN = { top: 12, right: 24, bottom: 40, left: 56 }
-const STATIC_AZEL_MARGIN = { top: 12, right: 64, bottom: 40, left: 56 }
+const STATIC_MARGIN = { top: 12, right: 24, bottom: 50, left: 90 }
+const STATIC_AZEL_MARGIN = { top: 12, right: 90, bottom: 50, left: 90 }
 const STATIC_HIDDEN = { hide: true, width: 0, domain: ['auto', 'auto'] as [string, string] }
+const PDF_TICK = 22
+const PDF_LABEL = 24
 
 function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[]; combined: ViewKey[]; height: number }) {
   const chartData = data.filter((_, i) => i % STATIC_SAMPLE === 0).map((r) => ({
@@ -235,17 +238,21 @@ function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[];
   }))
   let rMin = Infinity, rMax = -Infinity
   for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
-  const rPad = Math.max((rMax - rMin) * 0.05, 0.1)
-  const rDomain: [number, number] = Number.isFinite(rMin) ? [rMin - rPad, rMax + rPad] : [0, 1]
+  const rssiTicks = makeRssiTicks(rMin, rMax)
+  const rDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
+  const timeTicks = chartData.length > 0
+    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    : []
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={STATIC_MARGIN}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
-            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
-          <YAxis yAxisId="rssi" orientation="left" domain={rDomain} tickFormatter={(v: number) => (v / 40).toFixed(1)} tick={{ fontSize: 10 }}
-            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+          <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
+          <YAxis yAxisId="rssi" orientation="left" width={90} domain={rDomain} ticks={rssiTicks}
+            tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
           {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
           {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
           {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
@@ -276,15 +283,18 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
   }
   const pPad = Math.max((pMax - pMin) * 0.05, 0.0001)
   const pDomain: [number, number] = Number.isFinite(pMin) ? [pMin - pPad, pMax + pPad] : [0, 1]
+  const timeTicks = chartData.length > 0
+    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    : []
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={STATIC_MARGIN}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
-            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
-          <YAxis yAxisId="pae" orientation="left" domain={pDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 10 }}
-            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+          <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
+          <YAxis yAxisId="pae" orientation="left" width={90} domain={pDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
           {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
           {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
           {combined.includes('azel') && <YAxis yAxisId="el" {...STATIC_HIDDEN} />}
@@ -316,17 +326,20 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
   const elPad = Math.max((elMax - elMin) * 0.05, 0.1)
   const azDomain: [number, number] = Number.isFinite(azMin) ? [azMin - azPad, azMax + azPad] : [0, 1]
   const elDomain: [number, number] = Number.isFinite(elMin) ? [elMin - elPad, elMax + elPad] : [0, 1]
+  const timeTicks = chartData.length > 0
+    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    : []
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={STATIC_AZEL_MARGIN}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="t" type="number" tickFormatter={formatFlightTime} tick={{ fontSize: 10 }}
-            label={{ value: 'Flight Time', position: 'insideBottom', offset: -20, fontSize: 12 }} />
-          <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 10 }}
-            label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 11 }} />
-          <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 10 }}
-            label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 11 }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+          <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
+          <YAxis yAxisId="az" orientation="left" width={90} domain={azDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
+          <YAxis yAxisId="el" orientation="right" width={90} domain={elDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+            label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 20, fontSize: PDF_LABEL }} />
           {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
           {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
           {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
@@ -412,7 +425,7 @@ const DashboardPdfSnapshot = memo(
               </div>
             </div>
             <div style={{ marginTop: -PDF_ROW_OVERLAP, position: 'relative', zIndex: 3 }}>
-              <AzElPositionChart data={data} currentIndex={index} height={azElH} showHeading />
+              <AzElPositionChart data={data} currentIndex={index} height={azElH} showHeading forPdf />
             </div>
             <div
               style={{
@@ -421,10 +434,10 @@ const DashboardPdfSnapshot = memo(
               }}
             >
               <div style={{ marginRight: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 1 }}>
-                <TrackingErrorChart data={data} currentIndex={index} height={bottomH} showHeading />
+                <TrackingErrorChart data={data} currentIndex={index} height={bottomH} showHeading forPdf />
               </div>
               <div style={{ marginLeft: -PDF_BOTTOM_PAIR_OVERLAP, minWidth: 0, position: 'relative', zIndex: 2 }}>
-                <RssiChart data={data} currentIndex={index} height={bottomH} showHeading />
+                <RssiChart data={data} currentIndex={index} height={bottomH} showHeading forPdf />
               </div>
             </div>
           </div>
@@ -451,7 +464,7 @@ const DashboardPdfSnapshot = memo(
                 {combined.length > 0 ? (
                   <StaticAzElChart data={data} combined={combined} height={singleChartH} />
                 ) : (
-                  <AzElPositionChart data={data} currentIndex={index} height={singleChartH} showHeading />
+                  <AzElPositionChart data={data} currentIndex={index} height={singleChartH} showHeading forPdf />
                 )}
               </div>
               <div
@@ -480,7 +493,7 @@ const DashboardPdfSnapshot = memo(
               {combined.length > 0 ? (
                 <StaticPaeChart data={data} combined={combined} height={singleChartH} />
               ) : (
-                <TrackingErrorChart data={data} currentIndex={index} height={singleChartH} showHeading />
+                <TrackingErrorChart data={data} currentIndex={index} height={singleChartH} showHeading forPdf />
               )}
             </div>
           </div>
@@ -497,7 +510,7 @@ const DashboardPdfSnapshot = memo(
               {combined.length > 0 ? (
                 <StaticRssiChart data={data} combined={combined} height={singleChartH} />
               ) : (
-                <RssiChart data={data} currentIndex={index} height={singleChartH} showHeading />
+                <RssiChart data={data} currentIndex={index} height={singleChartH} showHeading forPdf />
               )}
             </div>
           </div>

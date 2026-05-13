@@ -40,7 +40,7 @@ export default function TrackingLocus({ data, currentIndex }: Props) {
       </h2>
       <ResponsiveContainer width="100%" height={280}>
         <ScatterChart margin={{ top: 8, right: 16, bottom: 24, left: 32 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis
             dataKey="x"
             type="number"

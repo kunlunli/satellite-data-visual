@@ -24,6 +24,7 @@ import {
   SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
   sliceByTime,
+  makeTimeTicks,
 } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
@@ -38,6 +39,7 @@ interface Props {
   fill?: boolean
   /** Show chart title inside the card (off when a page heading already labels the view). */
   showHeading?: boolean
+  forPdf?: boolean
 }
 
 const SAMPLE = 4
@@ -48,6 +50,7 @@ function AzElPositionChartInner({
   height = 320,
   fill = false,
   showHeading = true,
+  forPdf = false,
 }: Props) {
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
@@ -61,47 +64,58 @@ function AzElPositionChartInner({
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
+  const timeTicks = useMemo(
+    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], 10 * 60 * 1000),
+    [zoomDomain],
+  )
+
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
   const currentAz = data[currentIndex]?.cur_az
   const currentEl = data[currentIndex]?.cur_el
   const showCursor =
     chartData.length > 0 && Number.isFinite(currentTime) && data.length > 0
 
+  const tickSz = forPdf ? 22 : 14
+  const labelSz = forPdf ? 24 : 16
+  const axisPad = forPdf ? SYNCED_LEFT_Y_AXIS_WIDTH + 20 : SYNCED_LEFT_Y_AXIS_WIDTH
+  const axisPadR = forPdf ? SYNCED_RIGHT_Y_AXIS_WIDTH + 20 : SYNCED_RIGHT_Y_AXIS_WIDTH
+
   const chart = (
     <LineChart data={chartData} margin={{ ...SYNCED_TIME_CHART_MARGIN }}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+      <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
       <XAxis
         dataKey="t"
         type="number"
         domain={zoomDomain}
+        ticks={timeTicks}
         allowDataOverflow
         tickFormatter={fmtTick}
-        tick={{ fontSize: 13 }}
-        label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }}
+        tick={{ fontSize: tickSz }}
+        label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: labelSz }}
       />
       <YAxis
         yAxisId="az"
         orientation="left"
-        width={SYNCED_LEFT_Y_AXIS_WIDTH}
+        width={axisPad}
         domain={['auto', 'auto']}
-        tickFormatter={(v: number) => v.toFixed(2)}
-        tick={{ fontSize: 13 }}
-        label={{ value: 'Azimuth (°)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 14 }}
+        tickFormatter={(v: number) => v.toFixed(1)}
+        tick={{ fontSize: tickSz }}
+        label={{ value: 'Azimuth (°)', angle: -90, position: 'insideLeft', offset: 10, fontSize: labelSz }}
       />
       <YAxis
         yAxisId="el"
         orientation="right"
-        width={SYNCED_RIGHT_Y_AXIS_WIDTH}
+        width={axisPadR}
         domain={['auto', 'auto']}
-        tickFormatter={(v: number) => v.toFixed(2)}
-        tick={{ fontSize: 13 }}
-        label={{ value: 'Elevation (°)', angle: 90, position: 'insideRight', offset: 10, fontSize: 14 }}
+        tickFormatter={(v: number) => v.toFixed(1)}
+        tick={{ fontSize: tickSz }}
+        label={{ value: 'Elevation (°)', angle: 90, position: 'insideRight', offset: 10, fontSize: labelSz }}
       />
       <Tooltip
         labelFormatter={(v) => fmtTooltip(Number(v))}
         formatter={(v: number, name: string) => [`${v.toFixed(3)}°`, name]}
       />
-      <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: 13 }} />
+      <Legend verticalAlign="top" height={28} wrapperStyle={{ fontSize: tickSz }} />
       <Line
         yAxisId="az"
         type="monotone"

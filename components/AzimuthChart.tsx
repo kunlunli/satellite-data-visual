@@ -36,7 +36,7 @@ export default function AzimuthChart({ data, currentIndex, height = 200 }: Props
       <h2 className="text-xs font-semibold text-gray-600 text-center mb-2">Azimuth (deg)</h2>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 24, left: 32 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis dataKey="t" type="number" domain={['dataMin', 'dataMax']}
             tickFormatter={fmtTick} tick={{ fontSize: 13 }}
             label={{ value: 'Time', position: 'insideBottom', offset: -12, fontSize: 14 }} />

@@ -46,7 +46,7 @@ export default function MotorAnglesChart({ data, currentIndex }: Props) {
       </h2>
       <ResponsiveContainer width="100%" height={180}>
         <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 24, left: 32 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis
             dataKey="t"
             type="number"

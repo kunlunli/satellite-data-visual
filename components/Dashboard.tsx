@@ -628,7 +628,7 @@ export default function Dashboard() {
                   <div className="timeline-float-metric">
                     <span className="timeline-float-metric-label">RSSI</span>
                     <span className="timeline-float-metric-value accent-rssi">
-                      {formatScrubMetric(scrubRow.rssi / 40, 2, ' dBm')}
+                      {formatScrubMetric(rssiToDbm(scrubRow.rssi), 2, ' dBm')}
                     </span>
                   </div>
                   <div className="timeline-float-metric">
@@ -959,7 +959,7 @@ import {
   LineChart, Line, ReferenceLine,
   ReferenceDot,
 } from 'recharts'
-import { sliceByTime } from '@/lib/timeSeriesChartLayout'
+import { sliceByTime, makeTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
@@ -1224,6 +1224,10 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const timeTicks = useMemo(
+    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
+    [zoomDomain, useAbsoluteTime],
+  )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     // Always index combined logs by flightTimeMs so logs from different calendar
@@ -1291,12 +1295,12 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
-              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
-              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis yAxisId="pae" orientation="left" domain={paeDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 11 }}
-              label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 12 }}
+              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
+            <YAxis yAxisId="pae" orientation="left" domain={paeDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 12 }}
+              label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
             {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
@@ -1357,6 +1361,10 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const timeTicks = useMemo(
+    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
+    [zoomDomain, useAbsoluteTime],
+  )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     const combinedNNs = combinedLogs.map((log) =>
@@ -1391,6 +1399,10 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     const pad = Math.max((max - min) * 0.05, 0.1)
     return [min - pad, max + pad]
   }, [data, combinedLogs])
+  const rssiTicks = useMemo(
+    () => makeRssiTicks(rssiDomain[0], rssiDomain[1]),
+    [rssiDomain],
+  )
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentRssi = data[currentIndex]?.rssi
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
@@ -1418,19 +1430,19 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={FULL_MARGIN}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
-              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
-              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} tickFormatter={(v: number) => (v / 40).toFixed(1)} tick={{ fontSize: 11 }}
-              label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 12 }}
+              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
+            <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} ticks={rssiTicks} tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+              label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
             {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [
-                name.startsWith('RSSI') ? ((v / 40).toFixed(2) + ' dBm') : v.toFixed(3),
+                name.startsWith('RSSI') ? (rssiToDbm(v).toFixed(2) + ' dBm') : v.toFixed(3),
                 name,
               ]} />
             {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />}
@@ -1486,6 +1498,10 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, AZEL_FULL_PLOT_BOUNDS)
+  const timeTicks = useMemo(
+    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
+    [zoomDomain, useAbsoluteTime],
+  )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     const combinedNNs = combinedLogs.map((log) =>
@@ -1558,14 +1574,14 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={AZEL_FULL_MARGIN}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis dataKey="t" type="number" domain={zoomDomain} allowDataOverflow
-              tickFormatter={fmtTick} tick={{ fontSize: 10 }}
-              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 12 }} />
-            <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 11 }}
-              label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 12 }} />
-            <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 11 }}
-              label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 12 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
+              tickFormatter={fmtTick} tick={{ fontSize: 12 }}
+              label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
+            <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 12 }}
+              label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
+            <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 12 }}
+              label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 13 }} />
             {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
             {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
