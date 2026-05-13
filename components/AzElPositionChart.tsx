@@ -100,7 +100,7 @@ function AzElPositionChartInner({
         domain={['auto', 'auto']}
         tickFormatter={(v: number) => v.toFixed(1)}
         tick={{ fontSize: tickSz }}
-        label={{ value: 'Azimuth (°)', angle: -90, position: 'insideLeft', offset: 10, fontSize: labelSz }}
+        label={{ value: 'Azimuth (°)', angle: 0, position: 'insideTopLeft', dy: -(labelSz + 13), fontSize: labelSz }}
       />
       <YAxis
         yAxisId="el"
@@ -109,7 +109,7 @@ function AzElPositionChartInner({
         domain={['auto', 'auto']}
         tickFormatter={(v: number) => v.toFixed(1)}
         tick={{ fontSize: tickSz }}
-        label={{ value: 'Elevation (°)', angle: 90, position: 'insideRight', offset: 10, fontSize: labelSz }}
+        label={{ value: 'Elevation (°)', angle: 0, position: 'insideTopRight', dy: -(labelSz + 13), fontSize: labelSz }}
       />
       <Tooltip
         labelFormatter={(v) => fmtTooltip(Number(v))}

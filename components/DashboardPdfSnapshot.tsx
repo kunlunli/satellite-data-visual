@@ -223,9 +223,7 @@ function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
 }
 
 const STATIC_SAMPLE = 4
-const STATIC_MARGIN = { top: 12, right: 24, bottom: 50, left: 90 }
-const STATIC_AZEL_MARGIN = { top: 12, right: 90, bottom: 50, left: 90 }
-const STATIC_HIDDEN = { hide: true, width: 0, domain: ['auto', 'auto'] as [string, string] }
+const STATIC_MARGIN = { top: 36, right: 24, bottom: 50, left: 90 }
 const PDF_TICK = 22
 const PDF_LABEL = 24
 
@@ -243,25 +241,51 @@ function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[];
   const timeTicks = chartData.length > 0
     ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
     : []
+  let paeMin = Infinity, paeMax = -Infinity
+  for (const r of data) {
+    if (Number.isFinite(r.pae_joint_X)) { if (r.pae_joint_X < paeMin) paeMin = r.pae_joint_X; if (r.pae_joint_X > paeMax) paeMax = r.pae_joint_X }
+    if (Number.isFinite(r.pae_joint_Y)) { if (r.pae_joint_Y < paeMin) paeMin = r.pae_joint_Y; if (r.pae_joint_Y > paeMax) paeMax = r.pae_joint_Y }
+  }
+  const paePad = Math.max((paeMax - paeMin) * 0.05, 0.0001)
+  const paeDomain: [number, number] = Number.isFinite(paeMin) ? [paeMin - paePad, paeMax + paePad] : [0, 1]
+  let azMin = Infinity, azMax = -Infinity
+  for (const r of data) { if (Number.isFinite(r.cur_az)) { if (r.cur_az < azMin) azMin = r.cur_az; if (r.cur_az > azMax) azMax = r.cur_az } }
+  const azDomain: [number, number] = Number.isFinite(azMin) ? [azMin - Math.max((azMax - azMin) * 0.05, 0.1), azMax + Math.max((azMax - azMin) * 0.05, 0.1)] : [0, 1]
+  let elMin = Infinity, elMax = -Infinity
+  for (const r of data) { if (Number.isFinite(r.cur_el)) { if (r.cur_el < elMin) elMin = r.cur_el; if (r.cur_el > elMax) elMax = r.cur_el } }
+  const elDomain: [number, number] = Number.isFinite(elMin) ? [elMin - Math.max((elMax - elMin) * 0.05, 0.1), elMax + Math.max((elMax - elMin) * 0.05, 0.1)] : [0, 1]
+  const rightPad = 24 + (combined.includes('pae') ? 90 : 0) + (combined.includes('azel') ? 180 : 0)
+  const chartMargin = { ...STATIC_MARGIN, right: rightPad }
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={chartData} margin={STATIC_MARGIN}>
+        <LineChart data={chartData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
             label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
           <YAxis yAxisId="rssi" orientation="left" width={90} domain={rDomain} ticks={rssiTicks}
             tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
-            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
-          {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
-          {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
-          {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
-          {combined.includes('azel') && <YAxis yAxisId="el" {...STATIC_HIDDEN} />}
+            label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -37, fontSize: PDF_LABEL }} />
+          {combined.includes('pae') && (
+            <YAxis yAxisId="paeOverlay" orientation="right" width={90} domain={paeDomain}
+              tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'PAE (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
+          {combined.includes('azel') && (
+            <YAxis yAxisId="azOverlay" orientation="right" width={90} domain={azDomain}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'Az (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
+          {combined.includes('azel') && (
+            <YAxis yAxisId="elOverlay" orientation="right" width={90} domain={elDomain}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
           <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />
-          {combined.includes('pae') && <Line yAxisId="paeX" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('pae') && <Line yAxisId="paeY" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('azel') && <Line yAxisId="az" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('azel') && <Line yAxisId="el" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="azOverlay" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="elOverlay" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -286,23 +310,47 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
   const timeTicks = chartData.length > 0
     ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
     : []
+  let rMin = Infinity, rMax = -Infinity
+  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  const rssiTicks = makeRssiTicks(rMin, rMax)
+  const rssiDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
+  let azMin = Infinity, azMax = -Infinity
+  for (const r of data) { if (Number.isFinite(r.cur_az)) { if (r.cur_az < azMin) azMin = r.cur_az; if (r.cur_az > azMax) azMax = r.cur_az } }
+  const azDomain: [number, number] = Number.isFinite(azMin) ? [azMin - Math.max((azMax - azMin) * 0.05, 0.1), azMax + Math.max((azMax - azMin) * 0.05, 0.1)] : [0, 1]
+  let elMin = Infinity, elMax = -Infinity
+  for (const r of data) { if (Number.isFinite(r.cur_el)) { if (r.cur_el < elMin) elMin = r.cur_el; if (r.cur_el > elMax) elMax = r.cur_el } }
+  const elDomain: [number, number] = Number.isFinite(elMin) ? [elMin - Math.max((elMax - elMin) * 0.05, 0.1), elMax + Math.max((elMax - elMin) * 0.05, 0.1)] : [0, 1]
+  const rightPad = 24 + (combined.includes('rssi') ? 90 : 0) + (combined.includes('azel') ? 180 : 0)
+  const chartMargin = { ...STATIC_MARGIN, right: rightPad }
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={chartData} margin={STATIC_MARGIN}>
+        <LineChart data={chartData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
             label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
           <YAxis yAxisId="pae" orientation="left" width={90} domain={pDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: PDF_TICK }}
-            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
-          {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
-          {combined.includes('azel') && <YAxis yAxisId="az" {...STATIC_HIDDEN} />}
-          {combined.includes('azel') && <YAxis yAxisId="el" {...STATIC_HIDDEN} />}
+            label={{ value: 'PAE (°)', angle: 0, position: 'insideTopLeft', dy: -37, fontSize: PDF_LABEL }} />
+          {combined.includes('rssi') && (
+            <YAxis yAxisId="rssiOverlay" orientation="right" width={90} domain={rssiDomain} ticks={rssiTicks}
+              tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
+          {combined.includes('azel') && (
+            <YAxis yAxisId="azOverlay" orientation="right" width={90} domain={azDomain}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'Az (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
+          {combined.includes('azel') && (
+            <YAxis yAxisId="elOverlay" orientation="right" width={90} domain={elDomain}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
           <Line yAxisId="pae" type="monotone" dataKey="paeX" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />
           <Line yAxisId="pae" type="monotone" dataKey="paeY" stroke="#2563eb" strokeDasharray="5 3" dot={false} strokeWidth={2} isAnimationActive={false} />
-          {combined.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('azel') && <Line yAxisId="az" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('azel') && <Line yAxisId="el" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('rssi') && <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="azOverlay" type="monotone" dataKey="az" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('azel') && <Line yAxisId="elOverlay" type="monotone" dataKey="el" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -329,25 +377,45 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
   const timeTicks = chartData.length > 0
     ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
     : []
+  let paeMin = Infinity, paeMax = -Infinity
+  for (const r of data) {
+    if (Number.isFinite(r.pae_joint_X)) { if (r.pae_joint_X < paeMin) paeMin = r.pae_joint_X; if (r.pae_joint_X > paeMax) paeMax = r.pae_joint_X }
+    if (Number.isFinite(r.pae_joint_Y)) { if (r.pae_joint_Y < paeMin) paeMin = r.pae_joint_Y; if (r.pae_joint_Y > paeMax) paeMax = r.pae_joint_Y }
+  }
+  const paePad = Math.max((paeMax - paeMin) * 0.05, 0.0001)
+  const paeDomain: [number, number] = Number.isFinite(paeMin) ? [paeMin - paePad, paeMax + paePad] : [0, 1]
+  let rMin = Infinity, rMax = -Infinity
+  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  const rssiTicks = makeRssiTicks(rMin, rMax)
+  const rssiDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
+  const rightPad = 90 + (combined.includes('pae') ? 90 : 0) + (combined.includes('rssi') ? 90 : 0)
+  const chartMargin = { ...STATIC_MARGIN, right: rightPad }
   return (
     <div style={{ background: '#ffffff', borderRadius: 8, padding: 16, boxSizing: 'border-box' }}>
       <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={chartData} margin={STATIC_AZEL_MARGIN}>
+        <LineChart data={chartData} margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
             label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
           <YAxis yAxisId="az" orientation="left" width={90} domain={azDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
-            label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 20, fontSize: PDF_LABEL }} />
+            label={{ value: 'Az (°)', angle: 0, position: 'insideTopLeft', dy: -37, fontSize: PDF_LABEL }} />
           <YAxis yAxisId="el" orientation="right" width={90} domain={elDomain} tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
-            label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 20, fontSize: PDF_LABEL }} />
-          {combined.includes('pae') && <YAxis yAxisId="paeX" {...STATIC_HIDDEN} />}
-          {combined.includes('pae') && <YAxis yAxisId="paeY" {...STATIC_HIDDEN} />}
-          {combined.includes('rssi') && <YAxis yAxisId="rssi" {...STATIC_HIDDEN} />}
+            label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          {combined.includes('pae') && (
+            <YAxis yAxisId="paeOverlay" orientation="right" width={90} domain={paeDomain}
+              tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'PAE (°)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
+          {combined.includes('rssi') && (
+            <YAxis yAxisId="rssiOverlay" orientation="right" width={90} domain={rssiDomain} ticks={rssiTicks}
+              tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
+          )}
           <Line yAxisId="az" type="monotone" dataKey="az" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />
           <Line yAxisId="el" type="monotone" dataKey="el" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />
-          {combined.includes('pae') && <Line yAxisId="paeX" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('pae') && <Line yAxisId="paeY" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-          {combined.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('pae') && <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+          {combined.includes('rssi') && <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
         </LineChart>
       </ResponsiveContainer>
     </div>

@@ -108,7 +108,7 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
             ticks={rssiTicks}
             tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)}
             tick={{ fontSize: tickSz }}
-            label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 12, fontSize: labelSz }}
+            label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -(labelSz + 13), fontSize: labelSz }}
           />
           <SyncPadRightYAxis />
           <Tooltip

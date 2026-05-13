@@ -58,7 +58,7 @@ export default function MotorAnglesChart({ data, currentIndex }: Props) {
           <YAxis
             domain={['auto', 'auto']}
             tick={{ fontSize: 13 }}
-            label={{ value: 'deg', angle: -90, position: 'insideLeft', offset: 12, fontSize: 14 }}
+            label={{ value: 'deg', angle: 0, position: 'insideTopLeft', fontSize: 14 }}
           />
           <Tooltip
             labelFormatter={(v) => fmtTooltip(Number(v))}

@@ -94,7 +94,7 @@ function TrackingErrorChartInner({ data, currentIndex, height = 360, showHeading
             domain={['auto', 'auto']}
             tickFormatter={(v: number) => v.toFixed(2)}
             tick={{ fontSize: tickSz }}
-            label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 12, fontSize: labelSz }}
+            label={{ value: 'PAE (°)', angle: 0, position: 'insideTopLeft', dy: -(labelSz + 13), fontSize: labelSz }}
           />
           <SyncPadRightYAxis />
           <Tooltip

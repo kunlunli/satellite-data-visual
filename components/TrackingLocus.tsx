@@ -55,7 +55,7 @@ export default function TrackingLocus({ data, currentIndex }: Props) {
             type="number"
             domain={['auto', 'auto']}
             name="Elevation"
-            label={{ value: 'Elevation (deg)', angle: -90, position: 'insideLeft', offset: 12, fontSize: 11 }}
+            label={{ value: 'Elevation (deg)', angle: 0, position: 'insideTopLeft', fontSize: 11 }}
             tick={{ fontSize: 10 }}
             tickFormatter={(v) => v.toFixed(2)}
           />

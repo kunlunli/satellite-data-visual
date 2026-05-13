@@ -969,7 +969,7 @@ interface CP { data: SatelliteDataRow[]; currentIndex: number }
 
 const FULL_SAMPLE = 4
 
-const FULL_MARGIN = { top: 12, right: 24, bottom: 32, left: 40 }
+const FULL_MARGIN = { top: 28, right: 24, bottom: 32, left: 40 }
 
 // FULL_MARGIN + default Recharts YAxis width (60px), no right axis
 const FULL_PLOT_BOUNDS: PlotBounds = {
@@ -1223,7 +1223,9 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
-  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const paeCombinedRightWidth = (combined.includes('rssi') ? 60 : 0) + (combined.includes('azel') ? 120 : 0)
+  const paePlotBounds = useMemo<PlotBounds>(() => ({ ...FULL_PLOT_BOUNDS, right: FULL_MARGIN.right + paeCombinedRightWidth }), [paeCombinedRightWidth])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, paePlotBounds)
   const timeTicks = useMemo(
     () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
     [zoomDomain, useAbsoluteTime],
@@ -1267,6 +1269,30 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
     const pad = Math.max((max - min) * 0.05, 0.0001)
     return [min - pad, max + pad]
   }, [data, combinedLogs])
+  const rssiOverlayRange_pae = useMemo(() => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
+    return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
+  }, [data])
+  const rssiOverlayTicks_pae = useMemo(() => makeRssiTicks(rssiOverlayRange_pae.min, rssiOverlayRange_pae.max), [rssiOverlayRange_pae])
+  const rssiOverlayDomain_pae = useMemo((): [number, number] =>
+    rssiOverlayTicks_pae.length === 0 ? [0, 1] : [rssiOverlayTicks_pae[0], rssiOverlayTicks_pae[rssiOverlayTicks_pae.length - 1]],
+  [rssiOverlayTicks_pae])
+  const azOverlayDomain_pae = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (Number.isFinite(r.cur_az)) { if (r.cur_az < min) min = r.cur_az; if (r.cur_az > max) max = r.cur_az } }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [data])
+  const elOverlayDomain_pae = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (Number.isFinite(r.cur_el)) { if (r.cur_el < min) min = r.cur_el; if (r.cur_el > max) max = r.cur_el } }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [data])
+  const paeCombinedChartMargin = useMemo(() => ({ ...FULL_MARGIN, right: FULL_MARGIN.right + paeCombinedRightWidth }), [paeCombinedRightWidth])
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
@@ -1294,28 +1320,43 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={FULL_MARGIN}>
+          <LineChart data={chartData} margin={paeCombinedChartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
             <YAxis yAxisId="pae" orientation="left" domain={paeDomain} tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 12 }}
-              label={{ value: 'PAE (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
-            {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
+              label={{ value: 'PAE (°)', angle: 0, position: 'insideTopLeft', dy: -26, fontSize: 13 }} />
+            {combined.includes('rssi') && (
+              <YAxis yAxisId="rssiOverlay" orientation="right" width={60} domain={rssiOverlayDomain_pae} ticks={rssiOverlayTicks_pae}
+                tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
+            {combined.includes('azel') && (
+              <YAxis yAxisId="azOverlay" orientation="right" width={60} domain={azOverlayDomain_pae}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'Az (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
+            {combined.includes('azel') && (
+              <YAxis yAxisId="elOverlay" orientation="right" width={60} domain={elOverlayDomain_pae}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
-              formatter={(v: number, name: string) => [v.toFixed(4), name]} />
+              formatter={(v: number, name: string) => {
+                if (name === 'RSSI') return [rssiToDbm(v).toFixed(2) + ' dBm', name]
+                return [v.toFixed(4), name]
+              }} />
             {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />}
             {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={false} strokeWidth={2} strokeDasharray="5 3" isAnimationActive={false} />}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
@@ -1339,7 +1380,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
-          leftPad={FULL_PLOT_BOUNDS.left} rightPad={FULL_PLOT_BOUNDS.right} />
+          leftPad={FULL_PLOT_BOUNDS.left} rightPad={paePlotBounds.right} />
       )}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
@@ -1360,7 +1401,9 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
-  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, FULL_PLOT_BOUNDS)
+  const rssiCombinedRightWidth = (combined.includes('pae') ? 60 : 0) + (combined.includes('azel') ? 120 : 0)
+  const rssiPlotBounds = useMemo<PlotBounds>(() => ({ ...FULL_PLOT_BOUNDS, right: FULL_MARGIN.right + rssiCombinedRightWidth }), [rssiCombinedRightWidth])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, rssiPlotBounds)
   const timeTicks = useMemo(
     () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
     [zoomDomain, useAbsoluteTime],
@@ -1403,6 +1446,29 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     () => makeRssiTicks(rssiDomain[0], rssiDomain[1]),
     [rssiDomain],
   )
+  const paeOverlayDomain_rssi = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const r of data) { chk(r.pae_joint_X); chk(r.pae_joint_Y) }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.0001)
+    return [min - pad, max + pad]
+  }, [data])
+  const azOverlayDomain_rssi = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (Number.isFinite(r.cur_az)) { if (r.cur_az < min) min = r.cur_az; if (r.cur_az > max) max = r.cur_az } }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [data])
+  const elOverlayDomain_rssi = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (Number.isFinite(r.cur_el)) { if (r.cur_el < min) min = r.cur_el; if (r.cur_el > max) max = r.cur_el } }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad]
+  }, [data])
+  const rssiCombinedChartMargin = useMemo(() => ({ ...FULL_MARGIN, right: FULL_MARGIN.right + rssiCombinedRightWidth }), [rssiCombinedRightWidth])
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentRssi = data[currentIndex]?.rssi
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
@@ -1429,17 +1495,28 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={FULL_MARGIN}>
+          <LineChart data={chartData} margin={rssiCombinedChartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
             <YAxis yAxisId="rssi" orientation="left" domain={rssiDomain} ticks={rssiTicks} tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
-              label={{ value: 'RSSI (dBm)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
-            {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('azel') && <YAxis yAxisId="az" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('azel') && <YAxis yAxisId="el" {...HIDDEN_AXIS_PROPS} />}
+              label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -26, fontSize: 13 }} />
+            {combined.includes('pae') && (
+              <YAxis yAxisId="paeOverlay" orientation="right" width={60} domain={paeOverlayDomain_rssi}
+                tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 12 }}
+                label={{ value: 'PAE (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
+            {combined.includes('azel') && (
+              <YAxis yAxisId="azOverlay" orientation="right" width={60} domain={azOverlayDomain_rssi}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'Az (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
+            {combined.includes('azel') && (
+              <YAxis yAxisId="elOverlay" orientation="right" width={60} domain={elOverlayDomain_rssi}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [
                 name.startsWith('RSSI') ? (rssiToDbm(v).toFixed(2) + ' dBm') : v.toFixed(3),
@@ -1447,16 +1524,16 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
               ]} />
             {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
@@ -1476,7 +1553,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
-          leftPad={FULL_PLOT_BOUNDS.left} rightPad={FULL_PLOT_BOUNDS.right} />
+          leftPad={FULL_PLOT_BOUNDS.left} rightPad={rssiPlotBounds.right} />
       )}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
@@ -1497,7 +1574,9 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     for (const log of combinedLogs) { if (log.data.length > 0) maxEnd = Math.max(maxEnd, log.data[log.data.length - 1].flightTimeMs) }
     return [0, maxEnd || 1]
   }, [data, combinedLogs, useAbsoluteTime])
-  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, AZEL_FULL_PLOT_BOUNDS)
+  const azelCombinedRightWidth = (combined.includes('pae') ? 60 : 0) + (combined.includes('rssi') ? 60 : 0)
+  const azelPlotBounds = useMemo<PlotBounds>(() => ({ ...AZEL_FULL_PLOT_BOUNDS, right: AZEL_FULL_PLOT_BOUNDS.right + azelCombinedRightWidth }), [azelCombinedRightWidth])
+  const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, azelPlotBounds)
   const timeTicks = useMemo(
     () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
     [zoomDomain, useAbsoluteTime],
@@ -1546,6 +1625,24 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     const pad = Math.max((max - min) * 0.05, 0.1)
     return [min - pad, max + pad]
   }, [data, combinedLogs])
+  const paeOverlayDomain_azel = useMemo((): [number, number] => {
+    let min = Infinity, max = -Infinity
+    const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
+    for (const r of data) { chk(r.pae_joint_X); chk(r.pae_joint_Y) }
+    if (!Number.isFinite(min)) return [0, 1]
+    const pad = Math.max((max - min) * 0.05, 0.0001)
+    return [min - pad, max + pad]
+  }, [data])
+  const rssiOverlayRange_azel = useMemo(() => {
+    let min = Infinity, max = -Infinity
+    for (const r of data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
+    return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
+  }, [data])
+  const rssiOverlayTicks_azel = useMemo(() => makeRssiTicks(rssiOverlayRange_azel.min, rssiOverlayRange_azel.max), [rssiOverlayRange_azel])
+  const rssiOverlayDomain_azel = useMemo((): [number, number] =>
+    rssiOverlayTicks_azel.length === 0 ? [0, 1] : [rssiOverlayTicks_azel[0], rssiOverlayTicks_azel[rssiOverlayTicks_azel.length - 1]],
+  [rssiOverlayTicks_azel])
+  const azelCombinedChartMargin = useMemo(() => ({ ...AZEL_FULL_MARGIN, right: AZEL_FULL_MARGIN.right + azelCombinedRightWidth }), [azelCombinedRightWidth])
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentAz = data[currentIndex]?.cur_az
   const currentEl = data[currentIndex]?.cur_el
@@ -1573,30 +1670,40 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <LineToggleBar lines={lines} hidden={hiddenLines} onToggle={toggleLine} />
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={AZEL_FULL_MARGIN}>
+          <LineChart data={chartData} margin={azelCombinedChartMargin}>
             <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
             <YAxis yAxisId="az" orientation="left" domain={azDomain} tick={{ fontSize: 12 }}
-              label={{ value: 'Az (°)', angle: -90, position: 'insideLeft', offset: 16, fontSize: 13 }} />
-            <YAxis yAxisId="el" orientation="right" domain={elDomain} tick={{ fontSize: 12 }}
-              label={{ value: 'El (°)', angle: 90, position: 'insideRight', offset: 16, fontSize: 13 }} />
-            {combined.includes('pae') && <YAxis yAxisId="paeX" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('pae') && <YAxis yAxisId="paeY" {...HIDDEN_AXIS_PROPS} />}
-            {combined.includes('rssi') && <YAxis yAxisId="rssi" {...HIDDEN_AXIS_PROPS} />}
+              label={{ value: 'Az (°)', angle: 0, position: 'insideTopLeft', dy: -26, fontSize: 13 }} />
+            <YAxis yAxisId="el" orientation="right" width={60} domain={elDomain} tick={{ fontSize: 12 }}
+              label={{ value: 'El (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            {combined.includes('pae') && (
+              <YAxis yAxisId="paeOverlay" orientation="right" width={60} domain={paeOverlayDomain_azel}
+                tickFormatter={(v: number) => v.toFixed(3)} tick={{ fontSize: 12 }}
+                label={{ value: 'PAE (°)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
+            {combined.includes('rssi') && (
+              <YAxis yAxisId="rssiOverlay" orientation="right" width={60} domain={rssiOverlayDomain_azel} ticks={rssiOverlayTicks_azel}
+                tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+                label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
+            )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
-              formatter={(v: number, name: string) => [v.toFixed(3), name]} />
+              formatter={(v: number, name: string) => {
+                if (name === 'RSSI') return [rssiToDbm(v).toFixed(2) + ' dBm', name]
+                return [v.toFixed(3), name]
+              }} />
             {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
             {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeX" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeY" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               const color = LOG_COLORS[i % LOG_COLORS.length]
@@ -1619,7 +1726,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
-          leftPad={AZEL_FULL_PLOT_BOUNDS.left} rightPad={AZEL_FULL_PLOT_BOUNDS.right} />
+          leftPad={AZEL_FULL_PLOT_BOUNDS.left} rightPad={azelPlotBounds.right} />
       )}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
