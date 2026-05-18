@@ -10,7 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import type { SatelliteDataRow, ViewKey } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
-import { makeTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
+import { makeAutoTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
 
 export type PdfReportType = 'dashboard' | 'azel' | 'pae' | 'rssi'
 
@@ -239,7 +239,7 @@ function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[];
   const rssiTicks = makeRssiTicks(rMin, rMax)
   const rDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
   const timeTicks = chartData.length > 0
-    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    ? makeAutoTimeTicks(chartData[0].t, chartData[chartData.length - 1].t)
     : []
   let paeMin = Infinity, paeMax = -Infinity
   for (const r of data) {
@@ -308,7 +308,7 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
   const pPad = Math.max((pMax - pMin) * 0.05, 0.0001)
   const pDomain: [number, number] = Number.isFinite(pMin) ? [pMin - pPad, pMax + pPad] : [0, 1]
   const timeTicks = chartData.length > 0
-    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    ? makeAutoTimeTicks(chartData[0].t, chartData[chartData.length - 1].t)
     : []
   let rMin = Infinity, rMax = -Infinity
   for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
@@ -375,7 +375,7 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
   const azDomain: [number, number] = Number.isFinite(azMin) ? [azMin - azPad, azMax + azPad] : [0, 1]
   const elDomain: [number, number] = Number.isFinite(elMin) ? [elMin - elPad, elMax + elPad] : [0, 1]
   const timeTicks = chartData.length > 0
-    ? makeTimeTicks(chartData[0].t, chartData[chartData.length - 1].t, 10 * 60 * 1000)
+    ? makeAutoTimeTicks(chartData[0].t, chartData[chartData.length - 1].t)
     : []
   let paeMin = Infinity, paeMax = -Infinity
   for (const r of data) {

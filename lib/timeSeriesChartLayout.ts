@@ -92,6 +92,38 @@ export function makeTimeTicks(lo: number, hi: number, interval: number): number[
   return result
 }
 
+// Nice tick intervals in milliseconds (flight time) and seconds (wall-clock absolute time).
+const NICE_MS = [200, 500, 1_000, 2_000, 5_000, 10_000, 15_000, 30_000,
+  60_000, 120_000, 300_000, 600_000, 900_000, 1_800_000, 3_600_000, 7_200_000]
+const NICE_S  = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200]
+
+/**
+ * Like makeTimeTicks but automatically picks the interval so ~8 ticks are visible.
+ * Pass `inSeconds = true` when the domain is in Unix seconds (wall-clock mode).
+ */
+export function makeAutoTimeTicks(lo: number, hi: number, inSeconds = false): number[] {
+  const range = hi - lo
+  if (range <= 0) return [lo, hi]
+  const list = inSeconds ? NICE_S : NICE_MS
+  const rawInterval = range / 8
+  const interval = list.find((s) => s >= rawInterval) ?? list[list.length - 1]
+  return makeTimeTicks(lo, hi, interval)
+}
+
+/**
+ * When sample === 1 (full-resolution zoom), places a tick at every data point
+ * using `dataInterval` as the step. Otherwise falls back to makeAutoTimeTicks.
+ */
+export function makeZoomAwareTimeTicks(
+  lo: number, hi: number,
+  sample: number,
+  dataInterval: number,
+  inSeconds = false,
+): number[] {
+  if (sample === 1 && dataInterval > 0) return makeTimeTicks(lo, hi, dataInterval)
+  return makeAutoTimeTicks(lo, hi, inSeconds)
+}
+
 /** Convert raw RSSI sensor value to dBm. */
 export function rssiToDbm(raw: number): number {
   return raw / 42 - 88.81
@@ -114,4 +146,18 @@ export function makeRssiTicks(minRaw: number, maxRaw: number): number[] {
     ticks.push((dbm + 88.81) * 42)
   }
   return ticks
+}
+
+/**
+ * Returns 1 (full resolution) when the visible window is ≤ `threshold` of the
+ * full time range (i.e. zoomed in 4× or more), otherwise returns 4.
+ */
+export function getDynamicSample(
+  zoomDomain: [number, number],
+  timeDomain: [number, number],
+  threshold = 0.25,
+): number {
+  const span = timeDomain[1] - timeDomain[0]
+  if (span <= 0) return 4
+  return (zoomDomain[1] - zoomDomain[0]) / span <= threshold ? 1 : 4
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useCallback } from 'react'
+import { memo, useMemo, useCallback, useState } from 'react'
 import {
   LineChart,
   Line,
@@ -22,9 +22,10 @@ import {
   SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
   sliceByTime,
-  makeTimeTicks,
+  makeZoomAwareTimeTicks,
   makeRssiTicks,
   rssiToDbm,
+  getDynamicSample,
 } from '@/lib/timeSeriesChartLayout'
 import { SyncPadRightYAxis } from '@/components/SyncPadRightYAxis'
 import { useChartZoom } from '@/lib/useChartZoom'
@@ -39,24 +40,25 @@ interface Props {
   forPdf?: boolean
 }
 
-const SAMPLE = 4
-
 function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, forPdf = false }: Props) {
+  const [showDots, setShowDots] = useState(false)
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, SYNCED_CHART_PLOT_BOUNDS)
+  const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
 
   const allChartData = useMemo(
-    () => data.filter((_, i) => i % SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
-    [data],
+    () => data.filter((_, i) => i % sample === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
+    [data, sample],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
+  const dataInterval = data.length >= 2 ? data[1].flightTimeMs - data[0].flightTimeMs : 500
   const timeTicks = useMemo(
-    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], 10 * 60 * 1000),
-    [zoomDomain],
+    () => makeZoomAwareTimeTicks(zoomDomain[0], zoomDomain[1], sample, dataInterval),
+    [zoomDomain, sample, dataInterval],
   )
   const rssiRange = useMemo(() => {
     let min = Infinity, max = -Infinity
@@ -89,7 +91,7 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
       <div ref={containerRef}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={chartData} margin={{ ...SYNCED_TIME_CHART_MARGIN }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+          <CartesianGrid stroke="#c4c9d4" />
           <XAxis
             dataKey="t"
             type="number"
@@ -120,7 +122,7 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
             type="monotone"
             dataKey="rssi"
             stroke="#7c3aed"
-            dot={false}
+            dot={showDots ? { r: 4, fill: '#7c3aed', strokeWidth: 0 } : false}
             strokeWidth={1.5}
             isAnimationActive={false}
           />
@@ -149,6 +151,13 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
           rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
         />
       )}
+      <button
+        type="button"
+        onClick={() => setShowDots((v) => !v)}
+        className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+      >
+        {showDots ? 'Hide dots' : 'Show dots'}
+      </button>
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )

@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useMemo, useCallback } from 'react'
+import { memo, useMemo, useCallback, useState } from 'react'
 import {
   LineChart,
   Line,
@@ -24,7 +24,8 @@ import {
   SYNCED_CHART_PLOT_BOUNDS,
   getFlightTimeDomain,
   sliceByTime,
-  makeTimeTicks,
+  makeZoomAwareTimeTicks,
+  getDynamicSample,
 } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
@@ -42,8 +43,6 @@ interface Props {
   forPdf?: boolean
 }
 
-const SAMPLE = 4
-
 function AzElPositionChartInner({
   data,
   currentIndex,
@@ -52,21 +51,24 @@ function AzElPositionChartInner({
   showHeading = true,
   forPdf = false,
 }: Props) {
+  const [showDots, setShowDots] = useState(false)
   const { timezone, t0Us } = useTimezone()
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const fmtTooltip = useCallback((v: number) => timezone ? formatWallClockFull(v, t0Us, timezone) : formatFlightTime(v), [timezone, t0Us])
   const timeDomain = useMemo(() => getFlightTimeDomain(data), [data])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, SYNCED_CHART_PLOT_BOUNDS)
+  const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
 
   const allChartData = useMemo(
-    () => data.filter((_, i) => i % SAMPLE === 0).map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
-    [data],
+    () => data.filter((_, i) => i % sample === 0).map((r) => ({ t: r.flightTimeMs, az: r.cur_az, el: r.cur_el })),
+    [data, sample],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
 
+  const dataInterval = data.length >= 2 ? data[1].flightTimeMs - data[0].flightTimeMs : 500
   const timeTicks = useMemo(
-    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], 10 * 60 * 1000),
-    [zoomDomain],
+    () => makeZoomAwareTimeTicks(zoomDomain[0], zoomDomain[1], sample, dataInterval),
+    [zoomDomain, sample, dataInterval],
   )
 
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
@@ -82,7 +84,7 @@ function AzElPositionChartInner({
 
   const chart = (
     <LineChart data={chartData} margin={{ ...SYNCED_TIME_CHART_MARGIN }}>
-      <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+      <CartesianGrid stroke="#c4c9d4" />
       <XAxis
         dataKey="t"
         type="number"
@@ -122,7 +124,7 @@ function AzElPositionChartInner({
         dataKey="az"
         name="Azimuth"
         stroke="#2563eb"
-        dot={false}
+        dot={showDots ? { r: 4, fill: '#2563eb', strokeWidth: 0 } : false}
         strokeWidth={1.5}
         isAnimationActive={false}
       />
@@ -132,7 +134,7 @@ function AzElPositionChartInner({
         dataKey="el"
         name="Elevation"
         stroke="#ea580c"
-        dot={false}
+        dot={showDots ? { r: 4, fill: '#ea580c', strokeWidth: 0 } : false}
         strokeWidth={1.5}
         isAnimationActive={false}
       />
@@ -172,6 +174,16 @@ function AzElPositionChartInner({
     </LineChart>
   )
 
+  const dotsBtn = (
+    <button
+      type="button"
+      onClick={() => setShowDots((v) => !v)}
+      className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+    >
+      {showDots ? 'Hide dots' : 'Show dots'}
+    </button>
+  )
+
   if (fill) {
     return (
       <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-lg bg-white p-3 shadow-sm">
@@ -195,6 +207,7 @@ function AzElPositionChartInner({
             rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
           />
         )}
+        {dotsBtn}
         <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
       </div>
     )
@@ -221,6 +234,7 @@ function AzElPositionChartInner({
           rightPad={SYNCED_CHART_PLOT_BOUNDS.right}
         />
       )}
+      {dotsBtn}
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )

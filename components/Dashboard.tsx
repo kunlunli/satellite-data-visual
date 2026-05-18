@@ -959,7 +959,7 @@ import {
   LineChart, Line, ReferenceLine,
   ReferenceDot,
 } from 'recharts'
-import { sliceByTime, makeTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
+import { sliceByTime, makeZoomAwareTimeTicks, makeRssiTicks, rssiToDbm, getDynamicSample } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
@@ -967,7 +967,6 @@ import { useTimezone } from '@/lib/timezoneContext'
 
 interface CP { data: SatelliteDataRow[]; currentIndex: number }
 
-const FULL_SAMPLE = 4
 
 const FULL_MARGIN = { top: 28, right: 24, bottom: 32, left: 40 }
 
@@ -1208,6 +1207,8 @@ function makeNearestRowFn<R>(rows: R[], getT: (r: R) => number): (t: number) => 
 }
 
 function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
+  const [showDots, setShowDots] = useState(false)
+  const d = (fill: string) => showDots ? { r: 4, fill, strokeWidth: 0 } : false as false
   const { timezone } = useTimezone()
   const useAbsoluteTime = timezone !== null
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
@@ -1226,18 +1227,22 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
   const paeCombinedRightWidth = (combined.includes('rssi') ? 60 : 0) + (combined.includes('azel') ? 120 : 0)
   const paePlotBounds = useMemo<PlotBounds>(() => ({ ...FULL_PLOT_BOUNDS, right: FULL_MARGIN.right + paeCombinedRightWidth }), [paeCombinedRightWidth])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, paePlotBounds)
+  const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
+  const dataInterval = data.length >= 2
+    ? (useAbsoluteTime ? (data[1].timestamp - data[0].timestamp) / 1000 : data[1].flightTimeMs - data[0].flightTimeMs)
+    : (useAbsoluteTime ? 0.5 : 500)
   const timeTicks = useMemo(
-    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
-    [zoomDomain, useAbsoluteTime],
+    () => makeZoomAwareTimeTicks(zoomDomain[0], zoomDomain[1], sample, dataInterval, useAbsoluteTime),
+    [zoomDomain, sample, dataInterval, useAbsoluteTime],
   )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     // Always index combined logs by flightTimeMs so logs from different calendar
     // dates are aligned by their position in the pass, not absolute timestamp.
     const combinedNNs = combinedLogs.map((log) =>
-      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+      makeNearestRowFn(log.data.filter((_, i) => i % sample === 0), (r) => r.flightTimeMs)
     )
-    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+    return data.filter((_, i) => i % sample === 0).map((r) => {
       const t = getT(r)
       const row: { t: number; [k: string]: number } = {
         t,
@@ -1252,7 +1257,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       })
       return row
     })
-  }, [data, combined, combinedLogs, useAbsoluteTime])
+  }, [data, combined, combinedLogs, useAbsoluteTime, sample])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
     const buf = (hi - lo) * 0.1
@@ -1321,7 +1326,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={paeCombinedChartMargin}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <CartesianGrid stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
@@ -1347,24 +1352,24 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
                 if (name === 'RSSI') return [rssiToDbm(v).toFixed(2) + ' dBm', name]
                 return [v.toFixed(4), name]
               }} />
-            {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={false} strokeWidth={2} isAnimationActive={false} />}
-            {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={false} strokeWidth={2} strokeDasharray="5 3" isAnimationActive={false} />}
+            {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} isAnimationActive={false} />}
+            {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} strokeDasharray="5 3" isAnimationActive={false} />}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                <Line key={`${log.id}_pX`} yAxisId="pae" type="monotone" dataKey={`paeX_${i}`} name={`PAE X · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
-                <Line key={`${log.id}_pY`} yAxisId="pae" type="monotone" dataKey={`paeY_${i}`} name={`PAE Y · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+                <Line key={`${log.id}_pX`} yAxisId="pae" type="monotone" dataKey={`paeX_${i}`} name={`PAE X · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_pY`} yAxisId="pae" type="monotone" dataKey={`paeY_${i}`} name={`PAE Y · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
               ]
             })}
             <ReferenceLine yAxisId="pae" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -1382,12 +1387,21 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
           leftPad={FULL_PLOT_BOUNDS.left} rightPad={paePlotBounds.right} />
       )}
+      <button
+        type="button"
+        onClick={() => setShowDots((v) => !v)}
+        className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+      >
+        {showDots ? 'Hide dots' : 'Show dots'}
+      </button>
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }
 
 function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
+  const [showDots, setShowDots] = useState(false)
+  const d = (fill: string) => showDots ? { r: 4, fill, strokeWidth: 0 } : false as false
   const { timezone } = useTimezone()
   const useAbsoluteTime = timezone !== null
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
@@ -1404,16 +1418,20 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const rssiCombinedRightWidth = (combined.includes('pae') ? 60 : 0) + (combined.includes('azel') ? 120 : 0)
   const rssiPlotBounds = useMemo<PlotBounds>(() => ({ ...FULL_PLOT_BOUNDS, right: FULL_MARGIN.right + rssiCombinedRightWidth }), [rssiCombinedRightWidth])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, rssiPlotBounds)
+  const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
+  const dataInterval = data.length >= 2
+    ? (useAbsoluteTime ? (data[1].timestamp - data[0].timestamp) / 1000 : data[1].flightTimeMs - data[0].flightTimeMs)
+    : (useAbsoluteTime ? 0.5 : 500)
   const timeTicks = useMemo(
-    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
-    [zoomDomain, useAbsoluteTime],
+    () => makeZoomAwareTimeTicks(zoomDomain[0], zoomDomain[1], sample, dataInterval, useAbsoluteTime),
+    [zoomDomain, sample, dataInterval, useAbsoluteTime],
   )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     const combinedNNs = combinedLogs.map((log) =>
-      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+      makeNearestRowFn(log.data.filter((_, i) => i % sample === 0), (r) => r.flightTimeMs)
     )
-    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+    return data.filter((_, i) => i % sample === 0).map((r) => {
       const t = getT(r)
       const row: { t: number; [k: string]: number } = {
         t,
@@ -1427,7 +1445,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       })
       return row
     })
-  }, [data, combined, combinedLogs, useAbsoluteTime])
+  }, [data, combined, combinedLogs, useAbsoluteTime, sample])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
     const buf = (hi - lo) * 0.1
@@ -1496,7 +1514,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={rssiCombinedChartMargin}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <CartesianGrid stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
@@ -1522,25 +1540,25 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
                 name.startsWith('RSSI') ? (rssiToDbm(v).toFixed(2) + ' dBm') : v.toFixed(3),
                 name,
               ]} />
-            {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={false} strokeWidth={2} isAnimationActive={false} />}
+            {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={d('#7c3aed')} strokeWidth={2} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                <Line key={`${log.id}_rssi`} yAxisId="rssi" type="monotone" dataKey={`rssi_${i}`} name={`RSSI · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />,
+                <Line key={`${log.id}_rssi`} yAxisId="rssi" type="monotone" dataKey={`rssi_${i}`} name={`RSSI · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />,
               ]
             })}
             <ReferenceLine yAxisId="rssi" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -1555,12 +1573,21 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
           leftPad={FULL_PLOT_BOUNDS.left} rightPad={rssiPlotBounds.right} />
       )}
+      <button
+        type="button"
+        onClick={() => setShowDots((v) => !v)}
+        className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+      >
+        {showDots ? 'Hide dots' : 'Show dots'}
+      </button>
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
 }
 
 function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
+  const [showDots, setShowDots] = useState(false)
+  const d = (fill: string) => showDots ? { r: 4, fill, strokeWidth: 0 } : false as false
   const { timezone } = useTimezone()
   const useAbsoluteTime = timezone !== null
   const fmtTick = useCallback((v: number) => timezone ? formatWallClock(v, 0, timezone) : formatFlightTime(v), [timezone])
@@ -1577,16 +1604,20 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const azelCombinedRightWidth = (combined.includes('pae') ? 60 : 0) + (combined.includes('rssi') ? 60 : 0)
   const azelPlotBounds = useMemo<PlotBounds>(() => ({ ...AZEL_FULL_PLOT_BOUNDS, right: AZEL_FULL_PLOT_BOUNDS.right + azelCombinedRightWidth }), [azelCombinedRightWidth])
   const { domain: zoomDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(timeDomain, azelPlotBounds)
+  const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
+  const dataInterval = data.length >= 2
+    ? (useAbsoluteTime ? (data[1].timestamp - data[0].timestamp) / 1000 : data[1].flightTimeMs - data[0].flightTimeMs)
+    : (useAbsoluteTime ? 0.5 : 500)
   const timeTicks = useMemo(
-    () => makeTimeTicks(zoomDomain[0], zoomDomain[1], useAbsoluteTime ? 10 * 60 : 10 * 60 * 1000),
-    [zoomDomain, useAbsoluteTime],
+    () => makeZoomAwareTimeTicks(zoomDomain[0], zoomDomain[1], sample, dataInterval, useAbsoluteTime),
+    [zoomDomain, sample, dataInterval, useAbsoluteTime],
   )
   const allChartData = useMemo(() => {
     const getT = (r: SatelliteDataRow) => useAbsoluteTime ? r.timestamp / 1000 : r.flightTimeMs
     const combinedNNs = combinedLogs.map((log) =>
-      makeNearestRowFn(log.data.filter((_, i) => i % FULL_SAMPLE === 0), (r) => r.flightTimeMs)
+      makeNearestRowFn(log.data.filter((_, i) => i % sample === 0), (r) => r.flightTimeMs)
     )
-    return data.filter((_, i) => i % FULL_SAMPLE === 0).map((r) => {
+    return data.filter((_, i) => i % sample === 0).map((r) => {
       const t = getT(r)
       const row: { t: number; [k: string]: number } = {
         t,
@@ -1601,7 +1632,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       })
       return row
     })
-  }, [data, combined, combinedLogs, useAbsoluteTime])
+  }, [data, combined, combinedLogs, useAbsoluteTime, sample])
   const chartData = useMemo(() => {
     const [lo, hi] = zoomDomain
     const buf = (hi - lo) * 0.1
@@ -1671,7 +1702,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       <div ref={containerRef} className="relative min-h-0 w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={azelCombinedChartMargin}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
+            <CartesianGrid stroke="#c4c9d4" />
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
@@ -1694,23 +1725,23 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
                 if (name === 'RSSI') return [rssiToDbm(v).toFixed(2) + ' dBm', name]
                 return [v.toFixed(3), name]
               }} />
-            {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
-            {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={false} strokeWidth={1.5} isAnimationActive={false} />}
+            {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={1.5} isAnimationActive={false} />}
+            {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={d('#ea580c')} strokeWidth={1.5} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
-                ...(!hiddenLines.includes('az') ? [<Line key={`${log.id}_az`} yAxisId="az" type="monotone" dataKey={`az_${i}`} name={`Az · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />] : []),
-                ...(!hiddenLines.includes('el') ? [<Line key={`${log.id}_el`} yAxisId="el" type="monotone" dataKey={`el_${i}`} name={`El · ${lbl}`} stroke={color} dot={false} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />] : []),
+                ...(!hiddenLines.includes('az') ? [<Line key={`${log.id}_az`} yAxisId="az" type="monotone" dataKey={`az_${i}`} name={`Az · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />] : []),
+                ...(!hiddenLines.includes('el') ? [<Line key={`${log.id}_el`} yAxisId="el" type="monotone" dataKey={`el_${i}`} name={`El · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />] : []),
               ]
             })}
             <ReferenceLine yAxisId="az" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
@@ -1728,6 +1759,13 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
           leftPad={AZEL_FULL_PLOT_BOUNDS.left} rightPad={azelPlotBounds.right} />
       )}
+      <button
+        type="button"
+        onClick={() => setShowDots((v) => !v)}
+        className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+      >
+        {showDots ? 'Hide dots' : 'Show dots'}
+      </button>
       <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />
     </div>
   )
