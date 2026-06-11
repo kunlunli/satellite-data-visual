@@ -103,6 +103,13 @@ function PathZoomTooltip({
 
 
 const NO_SHAPE = () => <></>
+// Small dot that doesn't visually thicken the connecting line.
+// Recharts passes cx, cy, and the series fill as props to the shape renderer.
+const DOT_SHAPE = (props: unknown) => {
+  const { cx, cy, fill } = props as { cx?: number; cy?: number; fill?: string }
+  if (cx == null || cy == null) return <></>
+  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} stroke="white" strokeWidth={1} />
+}
 
 function TrackingPathChartInner({ data, currentIndex, height = 240, compactExport = false }: Props) {
   const [visibleLines, setVisibleLines] = useState<Set<LineKey>>(new Set(['actual'] as LineKey[]))
@@ -283,7 +290,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
     : { top: 4, right: 16, bottom: 28, left: 32 }
 
   return (
-    <div className={`relative bg-white rounded-lg shadow-sm ${compactExport ? 'p-1 pdf-path-chart' : 'p-3 flex flex-col'}`}>
+    <div className={`relative bg-white rounded-lg shadow-sm ${compactExport ? 'p-1 pdf-path-chart' : 'p-3 flex flex-col flex-1 min-h-0'}`}>
       <h2 className={`font-semibold text-gray-600 text-center ${compactExport ? 'text-[10px] mb-1' : 'text-xs mb-2'}`}>
         Tracking Path (AZ / EL)
       </h2>
@@ -360,7 +367,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
               fill="#3b82f6"
               line={{ stroke: '#3b82f6', strokeWidth: 1.2 }}
               lineJointType="basis"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
           )}
@@ -371,7 +378,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
               fill="#8b5cf6"
               line={{ stroke: '#8b5cf6', strokeWidth: 1.2, strokeDasharray: '6 4' }}
               lineJointType="linear"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
           )}
@@ -382,7 +389,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
               fill="#10b981"
               line={{ stroke: '#10b981', strokeWidth: 1.2, strokeDasharray: '4 4' }}
               lineJointType="linear"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
           )}

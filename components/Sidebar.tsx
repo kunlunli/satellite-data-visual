@@ -1,6 +1,6 @@
 'use client'
 
-export type View = 'dashboard' | 'azel' | 'pae' | 'rssi'
+export type View = 'dashboard' | 'azel' | 'pae' | 'rssi' | 'tracking'
 
 interface NavItem {
   id: View
@@ -50,6 +50,16 @@ const NAV_ITEMS: NavItem[] = [
       <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
         <path strokeLinecap="round" strokeLinejoin="round"
           d="M3 18h2V9H3zM7 18h2V6H7zM11 18h2V3h-2zM15 18h2V9h-2zM19 18h2v-5h-2z" />
+      </svg>
+    ),
+  },
+  {
+    id: 'tracking',
+    label: 'Tracking Path',
+    icon: (
+      <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 17 C6 14 9 10 12 10 S18 13 21 7" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 20 C6 17 9 13 12 13 S18 16 21 10" strokeDasharray="3 2" />
       </svg>
     ),
   },

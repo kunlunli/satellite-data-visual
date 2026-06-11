@@ -21,6 +21,11 @@ interface Props {
 // Azimuth is non-monotonic for the conical scan series — never filter by azimuth value
 // or it breaks the connecting line. Recharts' SVG clipPath handles visual clipping.
 const NO_SHAPE = () => <></>
+const DOT_SHAPE = (props: unknown) => {
+  const { cx, cy, fill } = props as { cx?: number; cy?: number; fill?: string }
+  if (cx == null || cy == null) return <></>
+  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} stroke="white" strokeWidth={1} />
+}
 
 function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
   const [showDots, setShowDots] = useState(false)
@@ -225,7 +230,7 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
               fill="#8b5cf6"
               line={{ stroke: '#8b5cf6', strokeWidth: 1.2, strokeDasharray: '6 4' }}
               lineJointType="linear"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
             <Scatter
@@ -234,7 +239,7 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
               fill="#10b981"
               line={{ stroke: '#10b981', strokeWidth: 1.2, strokeDasharray: '4 4' }}
               lineJointType="linear"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
             <Scatter
@@ -243,7 +248,7 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
               fill="#f97316"
               line={{ stroke: '#f97316', strokeWidth: 1.4 }}
               lineJointType="linear"
-              shape={showDots ? undefined : NO_SHAPE}
+              shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
           </ScatterChart>

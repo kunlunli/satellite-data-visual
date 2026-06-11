@@ -41,10 +41,11 @@ export default function Dashboard() {
     azel: false,
     pae: false,
     rssi: false,
+    tracking: false,
   })
   const [loadingView, setLoadingView] = useState<View | null>(null)
   /** Per-tab playback index: only the active tab follows `currentIndex` while stepping (hidden charts stay frozen). */
-  const [indexByView, setIndexByView] = useState({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+  const [indexByView, setIndexByView] = useState({ dashboard: 0, azel: 0, pae: 0, rssi: 0, tracking: 0 })
   const [timelinePanelOpen, setTimelinePanelOpen] = useState(true)
   const pdfSnapshotRef = useRef<HTMLDivElement>(null)
   const hiddenFileInputRef = useRef<HTMLInputElement>(null)
@@ -221,9 +222,9 @@ export default function Dashboard() {
         setActiveLogId(lastId)
         setCurrentIndex(0)
         setActiveView('dashboard')
-        setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
+        setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false, tracking: false })
         setLoadingView(null)
-        setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+        setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0, tracking: 0 })
         setTimelinePanelOpen(true)
         setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
       }
@@ -247,8 +248,8 @@ export default function Dashboard() {
     setActiveLogId(id)
     setCurrentIndex(0)
     setActiveView('dashboard')
-    setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
-    setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+    setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false, tracking: false })
+    setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0, tracking: 0 })
     setManageLogsOpen(false)
     setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
   }, [])
@@ -262,8 +263,8 @@ export default function Dashboard() {
         if (!newActive) {
           setCurrentIndex(0)
           setActiveView('dashboard')
-          setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false })
-          setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0 })
+          setMountedViews({ dashboard: true, azel: false, pae: false, rssi: false, tracking: false })
+          setIndexByView({ dashboard: 0, azel: 0, pae: 0, rssi: 0, tracking: 0 })
         }
         setRssiCombined([]); setPaeCombined([]); setAzelCombined([])
         return newActive
@@ -299,6 +300,7 @@ export default function Dashboard() {
       if (activeView === 'dashboard') return { ...prev, dashboard: currentIndex }
       if (activeView === 'azel') return { ...prev, azel: currentIndex }
       if (activeView === 'pae') return { ...prev, pae: currentIndex }
+      if (activeView === 'tracking') return { ...prev, tracking: currentIndex }
       return { ...prev, rssi: currentIndex }
     })
   }, [currentIndex, activeView])
@@ -307,6 +309,7 @@ export default function Dashboard() {
   const azelPlayIndex = activeView === 'azel' ? currentIndex : indexByView.azel
   const paePlayIndex = activeView === 'pae' ? currentIndex : indexByView.pae
   const rssiPlayIndex = activeView === 'rssi' ? currentIndex : indexByView.rssi
+  const trackingPlayIndex = activeView === 'tracking' ? currentIndex : indexByView.tracking
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -562,6 +565,7 @@ export default function Dashboard() {
             hasData && activeView !== 'dashboard' ? 'overflow-hidden' : 'overflow-auto'
           }`}
         >
+
           {hasData && timelinePanelOpen && (
             <div id="timeline-progress-panel" className="timeline-float">
               <div className="timeline-float-header">
@@ -701,6 +705,9 @@ export default function Dashboard() {
               {mountedViews.rssi && (
                 <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} otherLogs={otherLogs} fileName={fileName} combined={rssiCombined} onCombinedChange={setRssiCombined} />
               )}
+              {mountedViews.tracking && (
+                <TrackingView data={data} currentIndex={trackingPlayIndex} isActive={activeView === 'tracking'} />
+              )}
             </div>
           )}
         </main>
@@ -818,6 +825,18 @@ const DashboardView = memo(function DashboardView({
         <TrackingErrorChart data={data} currentIndex={currentIndex} height={400} />
         <RssiChart data={data} currentIndex={currentIndex} height={400} />
       </div>
+    </div>
+  )
+})
+
+const TrackingView = memo(function TrackingView({
+  data,
+  currentIndex,
+  isActive,
+}: CP & { isActive: boolean }) {
+  return (
+    <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
+      <TrackingPathChart data={data} currentIndex={currentIndex} />
     </div>
   )
 })
