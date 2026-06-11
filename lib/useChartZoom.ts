@@ -20,7 +20,7 @@ export interface PlotBounds {
  * Pass `plotBounds` to restrict zoom to the inner plot area — wheel events that land
  * in the axis/margin areas fall through to normal page scroll instead.
  */
-export function useChartZoom(fullDomain: [number, number], plotBounds?: PlotBounds) {
+export function useChartZoom(fullDomain: [number, number], plotBounds?: PlotBounds, minAbsoluteRange?: number) {
   const [domain, setDomain] = useState<[number, number] | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
@@ -40,9 +40,13 @@ export function useChartZoom(fullDomain: [number, number], plotBounds?: PlotBoun
         const fullRange = d1 - d0
         const newRange = (cur[1] - cur[0]) * factor
 
-        if (factor < 1 && newRange < fullRange * MIN_RANGE_RATIO) return prev
+        const minRange = minAbsoluteRange != null ? minAbsoluteRange : fullRange * MIN_RANGE_RATIO
+        // Snap to exactly minRange rather than returning prev, so the maximum zoom-in
+        // is always a precise window (e.g. exactly 1°) instead of whatever the last
+        // halving step happened to land on.
+        const clampedRange = factor < 1 ? Math.max(newRange, minRange) : newRange
 
-        const half = newRange / 2
+        const half = clampedRange / 2
         const s = Math.max(d0, center - half)
         const e = Math.min(d1, center + half)
 
@@ -50,7 +54,7 @@ export function useChartZoom(fullDomain: [number, number], plotBounds?: PlotBoun
         return [s, e] as [number, number]
       })
     },
-    [d0, d1],
+    [d0, d1, minAbsoluteRange],
   )
 
   const zoomIn = useCallback(() => applyZoom(ZOOM_IN_FACTOR), [applyZoom])

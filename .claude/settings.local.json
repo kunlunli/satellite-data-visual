@@ -19,7 +19,8 @@
       "Bash(cp \"C:\\\\Users\\\\Andy.Li\\\\Desktop\\\\Work\\\\SatVisual\\\\github\\\\satellite-data-visual\\\\Skill.md\" \"C:\\\\Users\\\\Andy.Li\\\\Desktop\\\\Work\\\\SatVisual\\\\github\\\\satellite-data-visual\\\\.claude\\\\commands\\\\frontend-design.md\")",
       "Bash(curl -s \"http://localhost:3002\")",
       "Bash(echo \"exit: $?\")",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

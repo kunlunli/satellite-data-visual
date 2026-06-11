@@ -1,14 +1,24 @@
 'use client'
 
-import { memo, useMemo } from 'react'
+import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
+import { getDynamicSample, sliceByTime } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
+import { VerticalScrollbar } from '@/components/VerticalScrollbar'
+
+type LineKey = 'actual' | 'cs_path' | 'cs_center'
+
+const LINE_DEFS: { key: LineKey; label: string; color: string; dashArray?: string }[] = [
+  { key: 'actual',    label: 'Antenna Pointing',      color: '#3b82f6' },
+  { key: 'cs_path',   label: 'Satellite Look Angle',  color: '#8b5cf6', dashArray: '6 4' },
+  { key: 'cs_center', label: 'Conical Scan Center',   color: '#10b981', dashArray: '4 4' },
+]
 
 interface Props {
   data: SatelliteDataRow[]
@@ -18,7 +28,15 @@ interface Props {
   compactExport?: boolean
 }
 
-function PathZoomTooltip({ active, payload, data }: { active?: boolean; payload?: any[]; data: SatelliteDataRow[] }) {
+function PathZoomTooltip({
+  active, payload, data, visibleLines,
+}: {
+  active?: boolean
+  payload?: any[]
+  data: SatelliteDataRow[]
+  visibleLines: Set<LineKey>
+  [key: string]: any
+}) {
   if (!active || !payload || payload.length === 0) return null
 
   const hovered = payload[0]?.payload as { idx?: number } | undefined
@@ -27,123 +45,235 @@ function PathZoomTooltip({ active, payload, data }: { active?: boolean; payload?
 
   const point = data[idx]
 
-  const start = Math.max(0, idx - 6)
-  const end = Math.min(data.length - 1, idx + 6)
-  const windowRows = data.slice(start, end + 1)
-  const w = 180
-  const h = 80
-  const p = 10
-  const xDen = Math.max(1, end - start)
-  const minEl = Math.min(...windowRows.flatMap((r) => [r.cur_el, r.target_el]))
-  const maxEl = Math.max(...windowRows.flatMap((r) => [r.cur_el, r.target_el]))
-  const yPad = Math.max((maxEl - minEl) * 0.15, 0.15)
-  const yMin = minEl - yPad
-  const yMax = maxEl + yPad
-  const yDen = Math.max(0.001, yMax - yMin)
+  // Mini sparkline for Antenna Pointing only (cs circles are too noisy)
+  const showSparkline = visibleLines.has('actual')
+  let sparklineEl: React.ReactNode = null
 
-  const toX = (i: number) => p + ((i - start) / xDen) * (w - 2 * p)
-  const toY = (el: number) => h - p - ((el - yMin) / yDen) * (h - 2 * p)
+  if (showSparkline) {
+    const start = Math.max(0, idx - 6)
+    const end = Math.min(data.length - 1, idx + 6)
+    const windowRows = data.slice(start, end + 1)
+    const w = 180, h = 80, p = 10
+    const xDen = Math.max(1, end - start)
 
-  const actualPath = windowRows
-    .map((r, localI) => `${localI === 0 ? 'M' : 'L'}${toX(start + localI).toFixed(2)},${toY(r.cur_el).toFixed(2)}`)
-    .join(' ')
-  const targetPath = windowRows
-    .map((r, localI) => `${localI === 0 ? 'M' : 'L'}${toX(start + localI).toFixed(2)},${toY(r.target_el).toFixed(2)}`)
-    .join(' ')
-  const hoverX = toX(idx)
-  const hoverActualY = toY(point.cur_el)
-  const hoverTargetY = toY(point.target_el)
+    const allEls = windowRows.map((r) => r.cur_el)
+    const minEl = Math.min(...allEls)
+    const maxEl = Math.max(...allEls)
+    const yPad = Math.max((maxEl - minEl) * 0.15, 0.15)
+    const yMin = minEl - yPad
+    const yMax = maxEl + yPad
+    const yDen = Math.max(0.001, yMax - yMin)
+
+    const toX = (i: number) => p + ((i - start) / xDen) * (w - 2 * p)
+    const toY = (el: number) => h - p - ((el - yMin) / yDen) * (h - 2 * p)
+
+    const actualPath = windowRows
+      .map((r, li) => `${li === 0 ? 'M' : 'L'}${toX(start + li).toFixed(2)},${toY(r.cur_el).toFixed(2)}`)
+      .join(' ')
+    const hoverX = toX(idx)
+
+    sparklineEl = (
+      <svg width={w} height={h}>
+        <rect x={0} y={0} width={w} height={h} fill="white" />
+        <path d={actualPath} fill="none" stroke="#3b82f6" strokeWidth={1.2} strokeDasharray="6 4" />
+        <line x1={hoverX} y1={p} x2={hoverX} y2={h - p} stroke="#9ca3af" strokeDasharray="3 3" />
+        <circle cx={hoverX} cy={toY(point.cur_el)} r={3} fill="#3b82f6" />
+      </svg>
+    )
+  }
 
   return (
     <div className="rounded border border-gray-300 bg-white/95 shadow-lg p-2 text-[11px]">
       <div className="font-semibold text-gray-700 mb-1">Zoomed View</div>
-      <svg width={w} height={h}>
-        <rect x={0} y={0} width={w} height={h} fill="white" />
-        <path d={actualPath} fill="none" stroke="#3b82f6" strokeWidth={1.2} strokeDasharray="6 4" />
-        <path d={targetPath} fill="none" stroke="#f97316" strokeWidth={1.4} strokeDasharray="4 4" />
-        <line x1={hoverX} y1={p} x2={hoverX} y2={h - p} stroke="#9ca3af" strokeDasharray="3 3" />
-        <circle cx={hoverX} cy={hoverActualY} r={3} fill="#3b82f6" />
-        <circle cx={hoverX} cy={hoverTargetY} r={3.5} fill="#f97316" stroke="#fff" strokeWidth={0.8} />
-      </svg>
-      <div className="mt-1 text-gray-700">
-        <div><span className="text-blue-600 font-medium">Actual</span>: AZ {point.cur_az.toFixed(3)}°, EL {point.cur_el.toFixed(3)}°</div>
-        <div><span className="text-orange-600 font-medium">Target</span>: AZ {point.target_az.toFixed(3)}°, EL {point.target_el.toFixed(3)}°</div>
+      {sparklineEl}
+      <div className={`${showSparkline ? 'mt-1' : ''} text-gray-700`}>
+        {visibleLines.has('actual') && (
+          <div><span className="text-blue-600 font-medium">Antenna Pointing</span>: AZ {point.cur_az.toFixed(3)}°, EL {point.cur_el.toFixed(3)}°</div>
+        )}
+        {visibleLines.has('cs_path') && (
+          <div><span className="font-medium" style={{ color: '#8b5cf6' }}>Satellite Look Angle</span>: AZ {point.cs_target_az.toFixed(3)}°, EL {point.cs_target_el.toFixed(3)}°</div>
+        )}
+        {visibleLines.has('cs_center') && (
+          <div><span className="font-medium" style={{ color: '#10b981' }}>Conical Scan Center</span>: AZ {point.cs_center_az.toFixed(3)}°, EL {point.cs_center_el.toFixed(3)}°</div>
+        )}
       </div>
     </div>
   )
 }
 
-/** Cap scatter points so Recharts can repaint quickly on each step (shape is preserved; hover idx stays real). */
-const SCATTER_POINT_CAP = 2800
 
-function buildScatterSeries(
-  data: SatelliteDataRow[],
-  pick: (r: SatelliteDataRow) => { az: number; el: number },
-) {
-  const n = data.length
-  if (n === 0) return []
-  const step = Math.max(1, Math.ceil(n / SCATTER_POINT_CAP))
-  const out: { az: number; el: number; idx: number }[] = []
-  for (let i = 0; i < n; i += step) {
-    const r = data[i]
-    const { az, el } = pick(r)
-    out.push({ az, el, idx: i })
-  }
-  const last = n - 1
-  if (out.length === 0 || out[out.length - 1].idx !== last) {
-    const r = data[last]
-    const { az, el } = pick(r)
-    out.push({ az, el, idx: last })
-  }
-  return out
-}
+const NO_SHAPE = () => <></>
 
 function TrackingPathChartInner({ data, currentIndex, height = 240, compactExport = false }: Props) {
+  const [visibleLines, setVisibleLines] = useState<Set<LineKey>>(new Set(['actual'] as LineKey[]))
+  const toggleLine = useCallback((key: LineKey) => setVisibleLines((prev) => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  }), [])
+
+  // AZ domain from ALL series — stable across visibility toggles so zoom range doesn't jump
   const azDomain = useMemo<[number, number]>(() => {
     if (data.length === 0) return [0, 360]
-    let minAz = Infinity
-    let maxAz = -Infinity
+    let min = Infinity, max = -Infinity
     for (const r of data) {
-      if (r.cur_az < minAz) minAz = r.cur_az
-      if (r.target_az < minAz) minAz = r.target_az
-      if (r.cur_az > maxAz) maxAz = r.cur_az
-      if (r.target_az > maxAz) maxAz = r.target_az
+      for (const v of [r.cur_az, r.target_az, r.cs_target_az, r.cs_center_az]) {
+        if (v < min) min = v
+        if (v > max) max = v
+      }
     }
-    const range = maxAz - minAz
+    const range = max - min
     const pad = Math.max(range * 0.05, 1)
-    return [minAz - pad, maxAz + pad]
+    return [min - pad, max + pad]
   }, [data])
+
   // chartMargin (non-export) = { top: 4, right: 16, bottom: 28, left: 32 } + left Y-axis ~60px
   const pathPlotBounds: PlotBounds = { left: 32 + 60, right: 16, top: 4, bottom: 28 }
-  const { domain: zoomAzDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(azDomain, compactExport ? undefined : pathPlotBounds)
+  const [showDots, setShowDots] = useState(false)
+  const { domain: zoomAzDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(azDomain, compactExport ? undefined : pathPlotBounds, 1.4)
+  const [azDomMin, azDomMax] = zoomAzDomain
+  const sample = useMemo(() => getDynamicSample(zoomAzDomain, azDomain), [zoomAzDomain, azDomain])
 
-  const allActualData = useMemo(
-    () => buildScatterSeries(data, (r) => ({ az: r.cur_az, el: r.cur_el })),
-    [data],
+  // cur_az is monotonic → always computed regardless of visibility, used as zoom time reference
+  const allActualData = useMemo(() => {
+    const out: { az: number; el: number; t: number; idx: number }[] = []
+    for (let i = 0; i < data.length; i += sample)
+      out.push({ az: data[i].cur_az, el: data[i].cur_el, t: data[i].flightTimeMs, idx: i })
+    return out
+  }, [data, sample])
+
+  // cs series are non-monotonic in AZ — never filter by az value, only slice by time
+  const allCsPathData = useMemo(() => {
+    const out: { az: number; el: number; t: number; idx: number }[] = []
+    for (let i = 0; i < data.length; i += sample)
+      out.push({ az: data[i].cs_target_az, el: data[i].cs_target_el, t: data[i].flightTimeMs, idx: i })
+    return out
+  }, [data, sample])
+
+  const allCsCenterData = useMemo(() => {
+    const out: { az: number; el: number; t: number; idx: number }[] = []
+    for (let i = 0; i < data.length; i += sample)
+      out.push({ az: data[i].cs_center_az, el: data[i].cs_center_el, t: data[i].flightTimeMs, idx: i })
+    return out
+  }, [data, sample])
+
+  // Time domain derived from cur_az (monotonic) — used to slice all series consistently
+  const visibleTimeDomain = useMemo<[number, number]>(() => {
+    const fallback: [number, number] = [allActualData[0]?.t ?? 0, allActualData[allActualData.length - 1]?.t ?? 0]
+    if (!isZoomed || allActualData.length === 0) return fallback
+    const buf = (azDomMax - azDomMin) * 0.1
+    let tMin = Infinity, tMax = -Infinity
+    for (const p of allActualData) {
+      if (p.az >= azDomMin - buf && p.az <= azDomMax + buf) {
+        if (p.t < tMin) tMin = p.t
+        if (p.t > tMax) tMax = p.t
+      }
+    }
+    return isFinite(tMin) ? [tMin, tMax] : fallback
+  }, [allActualData, isZoomed, azDomMin, azDomMax])
+
+  const actualData = useMemo(
+    () => isZoomed ? sliceByTime(allActualData, visibleTimeDomain[0], visibleTimeDomain[1]) : allActualData,
+    [allActualData, isZoomed, visibleTimeDomain],
   )
-  const allTargetData = useMemo(
-    () => buildScatterSeries(data, (r) => ({ az: r.target_az, el: r.target_el })),
-    [data],
+  const csPathData = useMemo(
+    () => isZoomed ? sliceByTime(allCsPathData, visibleTimeDomain[0], visibleTimeDomain[1]) : allCsPathData,
+    [allCsPathData, isZoomed, visibleTimeDomain],
   )
-  const actualData = allActualData
-  const targetData = allTargetData
+  const csCenterData = useMemo(
+    () => isZoomed ? sliceByTime(allCsCenterData, visibleTimeDomain[0], visibleTimeDomain[1]) : allCsCenterData,
+    [allCsCenterData, isZoomed, visibleTimeDomain],
+  )
+
+  // EL domain from ALL series — stable across visibility toggles
   const elevationDomain = useMemo<[number, number]>(() => {
     if (data.length === 0) return [0, 1]
+    let min = Infinity, max = -Infinity
+    for (const r of data) {
+      for (const v of [r.cur_el, r.target_el, r.cs_target_el, r.cs_center_el]) {
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+    }
+    const range = max - min
+    const pad = Math.max(range * 0.12, 0.25)
+    return [min - pad, max + pad]
+  }, [data])
 
-    let minEl = Number.POSITIVE_INFINITY
-    let maxEl = Number.NEGATIVE_INFINITY
+  const [fullElMin, fullElMax] = elevationDomain
+  const prevZoomSizeRef = useRef<number | null>(null)
+  const cachedElDomainRef = useRef<[number, number] | null>(null)
+  const prevVisibleLinesRef = useRef<string>('')
 
-    for (const row of data) {
-      if (row.cur_el < minEl) minEl = row.cur_el
-      if (row.target_el < minEl) minEl = row.target_el
-      if (row.cur_el > maxEl) maxEl = row.cur_el
-      if (row.target_el > maxEl) maxEl = row.target_el
+  const zoomedElevationDomain = useMemo<[number, number]>(() => {
+    const curSize = zoomAzDomain[1] - zoomAzDomain[0]
+    const visibleKey = Array.from(visibleLines).sort().join(',')
+
+    if (!isZoomed) {
+      prevZoomSizeRef.current = null
+      cachedElDomainRef.current = null
+      prevVisibleLinesRef.current = ''
+      return [fullElMin, fullElMax]
     }
 
-    const range = maxEl - minEl
-    const pad = Math.max(range * 0.12, 0.25)
-    return [minEl - pad, maxEl + pad]
-  }, [data])
+    // Same zoom level and same visible lines → panning only, keep Y window unchanged
+    if (
+      cachedElDomainRef.current !== null &&
+      prevZoomSizeRef.current !== null &&
+      Math.abs(prevZoomSizeRef.current - curSize) < 1e-9 &&
+      prevVisibleLinesRef.current === visibleKey
+    ) {
+      return cachedElDomainRef.current
+    }
+
+    if (data.length === 0) {
+      prevZoomSizeRef.current = curSize
+      prevVisibleLinesRef.current = visibleKey
+      cachedElDomainRef.current = [fullElMin, fullElMax]
+      return [fullElMin, fullElMax]
+    }
+
+    const [tMin, tMax] = visibleTimeDomain
+
+    // Always centre on target_el — a stable, monotonic anchor so toggling lines
+    // doesn't shift the visible window (fixes the downward-shift issue).
+    let satMin = Infinity, satMax = -Infinity
+    for (const row of data) {
+      if (row.flightTimeMs >= tMin && row.flightTimeMs <= tMax) {
+        if (row.target_el < satMin) satMin = row.target_el
+        if (row.target_el > satMax) satMax = row.target_el
+      }
+    }
+    const satCenter = isFinite(satMin) ? (satMin + satMax) / 2 : (fullElMin + fullElMax) / 2
+
+    // Scale Y proportionally to the X zoom ratio so the Y range at maximum zoom-in
+    // is always 0.5° regardless of how wide the full AZ domain is.
+    // At max zoom: xZoomRatio ≈ MIN_RANGE_RATIO (0.005) → half ≈ 0.25° → 0.5° total.
+    const fullAzRange = Math.max(azDomain[1] - azDomain[0], 1e-6)
+    const xZoomRatio = curSize / fullAzRange
+    const half = Math.max(0.125, (fullElMax - fullElMin) / 2 * xZoomRatio)
+    const result: [number, number] = [satCenter - half, satCenter + half]
+
+    prevZoomSizeRef.current = curSize
+    prevVisibleLinesRef.current = visibleKey
+    cachedElDomainRef.current = result
+    return result
+  }, [data, isZoomed, visibleTimeDomain, zoomAzDomain, azDomain, fullElMin, fullElMax, visibleLines])
+
+  const [zoomedElMin, zoomedElMax] = zoomedElevationDomain
+  const [yPanStart, setYPanStart] = useState<number | null>(null)
+  useEffect(() => { setYPanStart(null) }, [zoomedElMin, zoomedElMax])
+
+  const yDomain = useMemo<[number, number]>(() => {
+    if (yPanStart === null) return [zoomedElMin, zoomedElMax]
+    const range = zoomedElMax - zoomedElMin
+    const clamped = Math.max(fullElMin, Math.min(fullElMax - range, yPanStart))
+    return [clamped, clamped + range] as [number, number]
+  }, [yPanStart, zoomedElMin, zoomedElMax, fullElMin, fullElMax])
+
+  const panY = useCallback((newMin: number) => { setYPanStart(newMin) }, [])
+
   const currentActualPoint = useMemo(
     () => (data[currentIndex] ? [{ az: data[currentIndex].cur_az, el: data[currentIndex].cur_el }] : []),
     [data, currentIndex],
@@ -157,7 +287,40 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
       <h2 className={`font-semibold text-gray-600 text-center ${compactExport ? 'text-[10px] mb-1' : 'text-xs mb-2'}`}>
         Tracking Path (AZ / EL)
       </h2>
-      <div ref={compactExport ? undefined : containerRef} className={compactExport ? undefined : 'flex-1 min-h-0'}>
+
+      {/* Line selection toggle row */}
+      {!compactExport && (
+        <div className="flex flex-wrap gap-1 mb-2">
+          {LINE_DEFS.map((def) => {
+            const on = visibleLines.has(def.key)
+            return (
+              <button
+                key={def.key}
+                type="button"
+                onClick={() => toggleLine(def.key)}
+                className={`flex items-center gap-1.5 rounded border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  on
+                    ? 'border-gray-300 bg-white text-gray-700 shadow-sm'
+                    : 'border-gray-200 bg-gray-50 text-gray-400'
+                }`}
+              >
+                <svg width="16" height="6" aria-hidden="true" style={{ flexShrink: 0 }}>
+                  <line
+                    x1="0" y1="3" x2="16" y2="3"
+                    stroke={on ? def.color : '#d1d5db'}
+                    strokeWidth="2"
+                    strokeDasharray={def.dashArray}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                {def.label}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div ref={compactExport ? undefined : containerRef} className={compactExport ? undefined : 'flex-1 min-h-0 relative'}>
       <ResponsiveContainer width="100%" height={compactExport ? height : '100%'} className={compactExport ? 'pdf-recharts-fill' : undefined}>
         <ScatterChart margin={chartMargin}>
           <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
@@ -176,7 +339,8 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
             dataKey="el"
             type="number"
             name="Elevation"
-            domain={elevationDomain}
+            domain={isZoomed && !compactExport ? yDomain : elevationDomain}
+            allowDataOverflow={isZoomed && !compactExport}
             padding={compactExport ? { top: 8, bottom: 8 } : undefined}
             tickFormatter={(v: number) => v.toFixed(2)}
             tick={{ fontSize: 13 }}
@@ -184,31 +348,44 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
           />
           <Tooltip
             cursor={{ stroke: '#9ca3af', strokeDasharray: '4 3' }}
-            content={<PathZoomTooltip data={data} />}
+            content={(props: any) => <PathZoomTooltip {...props} data={data} visibleLines={visibleLines} />}
           />
           {!compactExport && (
             <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 13 }} />
           )}
-          <Scatter
-            name="Actual"
-            data={actualData}
-            fill="#3b82f6"
-            fillOpacity={0}
-            line={{ stroke: '#3b82f6', strokeWidth: 1.2, strokeDasharray: '6 4' }}
-            lineJointType="linear"
-            shape="circle"
-            isAnimationActive={false}
-          />
-          <Scatter
-            name="Target"
-            data={targetData}
-            fill="#f97316"
-            fillOpacity={0}
-            line={{ stroke: '#f97316', strokeWidth: 1.2, strokeDasharray: '4 4' }}
-            lineJointType="linear"
-            shape="circle"
-            isAnimationActive={false}
-          />
+          {(compactExport || visibleLines.has('actual')) && (
+            <Scatter
+              name="Antenna Pointing"
+              data={actualData}
+              fill="#3b82f6"
+              line={{ stroke: '#3b82f6', strokeWidth: 1.2 }}
+              lineJointType="basis"
+              shape={showDots ? undefined : NO_SHAPE}
+              isAnimationActive={false}
+            />
+          )}
+          {!compactExport && visibleLines.has('cs_path') && (
+            <Scatter
+              name="Satellite Look Angle"
+              data={csPathData}
+              fill="#8b5cf6"
+              line={{ stroke: '#8b5cf6', strokeWidth: 1.2, strokeDasharray: '6 4' }}
+              lineJointType="linear"
+              shape={showDots ? undefined : NO_SHAPE}
+              isAnimationActive={false}
+            />
+          )}
+          {!compactExport && visibleLines.has('cs_center') && (
+            <Scatter
+              name="Conical Scan Center"
+              data={csCenterData}
+              fill="#10b981"
+              line={{ stroke: '#10b981', strokeWidth: 1.2, strokeDasharray: '4 4' }}
+              lineJointType="linear"
+              shape={showDots ? undefined : NO_SHAPE}
+              isAnimationActive={false}
+            />
+          )}
           <Scatter
             name="Current Position"
             data={currentActualPoint}
@@ -219,6 +396,17 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
           />
         </ScatterChart>
       </ResponsiveContainer>
+      {!compactExport && isZoomed && (
+        <div className="absolute inset-y-0 right-0 w-[10px]">
+          <VerticalScrollbar
+            fullDomain={elevationDomain}
+            visibleDomain={yDomain}
+            onPan={panY}
+            topPad={24}
+            bottomPad={28}
+          />
+        </div>
+      )}
       </div>
       {!compactExport && isZoomed && (
         <ZoomScrollbar
@@ -230,6 +418,15 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
         />
       )}
       {!compactExport && <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />}
+      {!compactExport && (
+        <button
+          type="button"
+          onClick={() => setShowDots(v => !v)}
+          className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+        >
+          {showDots ? 'Hide dots' : 'Show dots'}
+        </button>
+      )}
     </div>
   )
 }
