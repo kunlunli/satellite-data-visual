@@ -6,8 +6,9 @@ import {
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
-import { getDynamicSample, sliceByTime } from '@/lib/timeSeriesChartLayout'
+import { getDynamicSample, sliceByTime, azWindowToTimeDomain } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
+import { useDragPan } from '@/lib/useDragPan'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
 import { VerticalScrollbar } from '@/components/VerticalScrollbar'
@@ -24,7 +25,7 @@ const NO_SHAPE = () => <></>
 const DOT_SHAPE = (props: unknown) => {
   const { cx, cy, fill } = props as { cx?: number; cy?: number; fill?: string }
   if (cx == null || cy == null) return <></>
-  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} stroke="white" strokeWidth={1} />
+  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} />
 }
 
 function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
@@ -85,20 +86,13 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
     return out
   }, [data, sample])
 
-  // target_az is monotonic with time → use it to find the time range for the visible azimuth window.
-  // All three series are sliced to that same time range so the conical scan circle stays continuous.
+  // target_az is monotonic with time → binary-search allSatPathData (sorted by az) to find
+  // the time range for the visible azimuth window. O(log n) vs the prior O(n) linear scan.
   const visibleTimeDomain = useMemo<[number, number]>(() => {
     const fallback: [number, number] = [allSatPathData[0]?.t ?? 0, allSatPathData[allSatPathData.length - 1]?.t ?? 0]
     if (!isZoomed || allSatPathData.length === 0) return fallback
     const buf = (azMax - azMin) * 0.1
-    let tMin = Infinity, tMax = -Infinity
-    for (const p of allSatPathData) {
-      if (p.az >= azMin - buf && p.az <= azMax + buf) {
-        if (p.t < tMin) tMin = p.t
-        if (p.t > tMax) tMax = p.t
-      }
-    }
-    return isFinite(tMin) ? [tMin, tMax] : fallback
+    return azWindowToTimeDomain(allSatPathData, azMin - buf, azMax + buf) ?? fallback
   }, [allSatPathData, isZoomed, azMin, azMax])
 
   const csPathData = useMemo(
@@ -193,12 +187,25 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
 
   const panY = useCallback((newMin: number) => { setYPanStart(newMin) }, [])
 
+  const dragXDomainRef = useRef<[number, number]>(zoomAzDomain)
+  dragXDomainRef.current = zoomAzDomain
+  const dragYDomainRef = useRef<[number, number]>(yDomain)
+  dragYDomainRef.current = yDomain
+  const { isDragging } = useDragPan(
+    containerRef, plotBounds, isZoomed,
+    dragXDomainRef, dragYDomainRef, pan, panY,
+  )
+
   return (
     <div className="relative bg-white rounded-lg shadow-sm p-3 flex flex-col">
       <h2 className="font-semibold text-gray-600 text-center text-xs mb-2">
         Conical Scan Path vs Target
       </h2>
-      <div ref={containerRef} className="flex-1 min-h-0 relative">
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 relative"
+        style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      >
         <ResponsiveContainer width="100%" height={height}>
           <ScatterChart margin={{ top: 4, right: 16, bottom: 28, left: 32 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />

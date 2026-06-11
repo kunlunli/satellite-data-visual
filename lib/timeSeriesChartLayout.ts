@@ -149,6 +149,41 @@ export function makeRssiTicks(minRaw: number, maxRaw: number): number[] {
 }
 
 /**
+ * Binary-searches `sorted` (monotonically ordered by `az`, ascending or descending)
+ * and returns the [tMin, tMax] time extent of rows whose `az` falls within
+ * [azLo, azHi], or null if none exist.
+ *
+ * O(log n) — replaces the O(n) linear scan in visibleTimeDomain, which runs on
+ * every pan/zoom frame and is the main per-frame bottleneck for large datasets.
+ */
+export function azWindowToTimeDomain(
+  sorted: { az: number; t: number }[],
+  azLo: number,
+  azHi: number,
+): [number, number] | null {
+  if (sorted.length === 0) return null
+  const ascending = sorted[0].az <= sorted[sorted.length - 1].az
+  let startIdx: number, endIdx: number
+  if (ascending) {
+    let lo = 0, hi = sorted.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m].az < azLo) lo = m + 1; else hi = m }
+    startIdx = lo
+    lo = 0; hi = sorted.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m].az <= azHi) lo = m + 1; else hi = m }
+    endIdx = lo - 1
+  } else {
+    let lo = 0, hi = sorted.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m].az > azHi) lo = m + 1; else hi = m }
+    startIdx = lo
+    lo = 0; hi = sorted.length
+    while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m].az >= azLo) lo = m + 1; else hi = m }
+    endIdx = lo - 1
+  }
+  if (startIdx > endIdx) return null
+  return [sorted[startIdx].t, sorted[endIdx].t]
+}
+
+/**
  * Returns 1 (full resolution) when the visible window is ≤ `threshold` of the
  * full time range (i.e. zoomed in 4× or more), otherwise returns 4.
  */

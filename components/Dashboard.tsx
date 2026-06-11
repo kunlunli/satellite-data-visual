@@ -694,7 +694,7 @@ export default function Dashboard() {
               )}
 
               {mountedViews.dashboard && (
-                <DashboardView data={data} currentIndex={dashboardPlayIndex} isActive={activeView === 'dashboard'} />
+                <DashboardView data={data} currentIndex={dashboardPlayIndex} isActive={activeView === 'dashboard'} onIndexClick={setCurrentIndex} />
               )}
               {mountedViews.azel && (
                 <AzElView data={data} currentIndex={azelPlayIndex} isActive={activeView === 'azel'} otherLogs={otherLogs} fileName={fileName} combined={azelCombined} onCombinedChange={setAzelCombined} />
@@ -706,7 +706,7 @@ export default function Dashboard() {
                 <RssiView data={data} currentIndex={rssiPlayIndex} isActive={activeView === 'rssi'} otherLogs={otherLogs} fileName={fileName} combined={rssiCombined} onCombinedChange={setRssiCombined} />
               )}
               {mountedViews.tracking && (
-                <TrackingView data={data} currentIndex={trackingPlayIndex} isActive={activeView === 'tracking'} />
+                <TrackingView data={data} currentIndex={trackingPlayIndex} isActive={activeView === 'tracking'} onIndexClick={setCurrentIndex} />
               )}
             </div>
           )}
@@ -813,12 +813,13 @@ const DashboardView = memo(function DashboardView({
   data,
   currentIndex,
   isActive,
-}: CP & { isActive: boolean }) {
+  onIndexClick,
+}: CP & { isActive: boolean; onIndexClick?: (idx: number) => void }) {
   return (
     <div className={isActive ? 'block' : 'hidden'}>
       <div className="grid gap-3" style={{ gridTemplateColumns: '1fr' }}>
         <div className="grid gap-3 items-stretch lg:grid-cols-[minmax(0,1fr)_320px]">
-          <TrackingPathChart data={data} currentIndex={currentIndex} height={300} />
+          <TrackingPathChart data={data} currentIndex={currentIndex} height={300} onIndexClick={onIndexClick} />
           <SkyPlot data={data} currentIndex={currentIndex} />
         </div>
         <AzElPositionChart data={data} currentIndex={currentIndex} height={360} />
@@ -833,10 +834,11 @@ const TrackingView = memo(function TrackingView({
   data,
   currentIndex,
   isActive,
-}: CP & { isActive: boolean }) {
+  onIndexClick,
+}: CP & { isActive: boolean; onIndexClick?: (idx: number) => void }) {
   return (
     <div className={isActive ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'hidden'}>
-      <TrackingPathChart data={data} currentIndex={currentIndex} />
+      <TrackingPathChart data={data} currentIndex={currentIndex} onIndexClick={onIndexClick} />
     </div>
   )
 })

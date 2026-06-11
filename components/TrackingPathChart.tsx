@@ -1,13 +1,14 @@
 'use client'
 
-import { memo, useMemo, useRef, useState, useEffect, useCallback } from 'react'
+import { memo, useMemo, useRef, useState, useEffect, useCallback, useId } from 'react'
 import {
   ScatterChart, Scatter, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
+  Tooltip, Legend, ResponsiveContainer, Customized,
 } from 'recharts'
 import type { SatelliteDataRow } from '@/lib/types'
-import { getDynamicSample, sliceByTime } from '@/lib/timeSeriesChartLayout'
+import { getDynamicSample, sliceByTime, azWindowToTimeDomain } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
+import { useDragPan } from '@/lib/useDragPan'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
 import { VerticalScrollbar } from '@/components/VerticalScrollbar'
@@ -26,6 +27,8 @@ interface Props {
   height?: number
   /** Tighter card + larger plot margins so PDF / small widths do not clip the AZ/EL trace. */
   compactExport?: boolean
+  /** Called with the original data-array index when the user clicks a data point. */
+  onIndexClick?: (idx: number) => void
 }
 
 function PathZoomTooltip({
@@ -108,10 +111,10 @@ const NO_SHAPE = () => <></>
 const DOT_SHAPE = (props: unknown) => {
   const { cx, cy, fill } = props as { cx?: number; cy?: number; fill?: string }
   if (cx == null || cy == null) return <></>
-  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} stroke="white" strokeWidth={1} />
+  return <circle cx={cx} cy={cy} r={3.5} fill={fill ?? 'currentColor'} />
 }
 
-function TrackingPathChartInner({ data, currentIndex, height = 240, compactExport = false }: Props) {
+function TrackingPathChartInner({ data, currentIndex, height = 240, compactExport = false, onIndexClick }: Props) {
   const [visibleLines, setVisibleLines] = useState<Set<LineKey>>(new Set(['actual'] as LineKey[]))
   const toggleLine = useCallback((key: LineKey) => setVisibleLines((prev) => {
     const next = new Set(prev)
@@ -138,6 +141,10 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
   // chartMargin (non-export) = { top: 4, right: 16, bottom: 28, left: 32 } + left Y-axis ~60px
   const pathPlotBounds: PlotBounds = { left: 32 + 60, right: 16, top: 4, bottom: 28 }
   const [showDots, setShowDots] = useState(false)
+  const [showDelta, setShowDelta] = useState(false)
+  // Unique SVG marker ID — avoids conflicts when multiple chart instances are in the DOM
+  const rawId = useId()
+  const deltaMarkerId = `tdelta-${rawId.replace(/:/g, '')}`
   const { domain: zoomAzDomain, zoomIn, zoomOut, pan, containerRef, isZoomed } = useChartZoom(azDomain, compactExport ? undefined : pathPlotBounds, 1.4)
   const [azDomMin, azDomMax] = zoomAzDomain
   const sample = useMemo(() => getDynamicSample(zoomAzDomain, azDomain), [zoomAzDomain, azDomain])
@@ -165,19 +172,14 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
     return out
   }, [data, sample])
 
-  // Time domain derived from cur_az (monotonic) — used to slice all series consistently
+  // Time domain derived from cur_az (monotonic) — used to slice all series consistently.
+  // Binary-searches allActualData (sorted by az) so this is O(log n) instead of O(n),
+  // which matters because it runs on every pan/zoom frame.
   const visibleTimeDomain = useMemo<[number, number]>(() => {
     const fallback: [number, number] = [allActualData[0]?.t ?? 0, allActualData[allActualData.length - 1]?.t ?? 0]
     if (!isZoomed || allActualData.length === 0) return fallback
     const buf = (azDomMax - azDomMin) * 0.1
-    let tMin = Infinity, tMax = -Infinity
-    for (const p of allActualData) {
-      if (p.az >= azDomMin - buf && p.az <= azDomMax + buf) {
-        if (p.t < tMin) tMin = p.t
-        if (p.t > tMax) tMax = p.t
-      }
-    }
-    return isFinite(tMin) ? [tMin, tMax] : fallback
+    return azWindowToTimeDomain(allActualData, azDomMin - buf, azDomMax + buf) ?? fallback
   }, [allActualData, isZoomed, azDomMin, azDomMax])
 
   const actualData = useMemo(
@@ -212,6 +214,9 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
   const prevZoomSizeRef = useRef<number | null>(null)
   const cachedElDomainRef = useRef<[number, number] | null>(null)
   const prevVisibleLinesRef = useRef<string>('')
+  // Tooltip hover state tracked in refs so onClick can check without a re-render
+  const tooltipActiveRef = useRef(false)
+  const tooltipIdxRef = useRef<number | null>(null)
 
   const zoomedElevationDomain = useMemo<[number, number]>(() => {
     const curSize = zoomAzDomain[1] - zoomAzDomain[0]
@@ -281,6 +286,16 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
 
   const panY = useCallback((newMin: number) => { setYPanStart(newMin) }, [])
 
+  // Always-fresh domain refs for drag-to-pan (read at mousedown, not at effect-setup time)
+  const dragXDomainRef = useRef<[number, number]>(zoomAzDomain)
+  dragXDomainRef.current = zoomAzDomain
+  const dragYDomainRef = useRef<[number, number]>(yDomain)
+  dragYDomainRef.current = yDomain
+  const { isDragging } = useDragPan(
+    containerRef, pathPlotBounds, isZoomed && !compactExport,
+    dragXDomainRef, dragYDomainRef, pan, panY,
+  )
+
   const currentActualPoint = useMemo(
     () => (data[currentIndex] ? [{ az: data[currentIndex].cur_az, el: data[currentIndex].cur_el }] : []),
     [data, currentIndex],
@@ -327,9 +342,20 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
         </div>
       )}
 
-      <div ref={compactExport ? undefined : containerRef} className={compactExport ? undefined : 'flex-1 min-h-0 relative'}>
+      <div
+        ref={compactExport ? undefined : containerRef}
+        className={compactExport ? undefined : 'flex-1 min-h-0 relative'}
+        style={!compactExport ? { cursor: isDragging ? 'grabbing' : 'grab' } : undefined}
+      >
       <ResponsiveContainer width="100%" height={compactExport ? height : '100%'} className={compactExport ? 'pdf-recharts-fill' : undefined}>
-        <ScatterChart margin={chartMargin}>
+        <ScatterChart
+          margin={chartMargin}
+          onClick={!compactExport && onIndexClick ? () => {
+            if (tooltipActiveRef.current && tooltipIdxRef.current != null) {
+              onIndexClick(tooltipIdxRef.current)
+            }
+          } : undefined}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="#c4c9d4" />
           <XAxis
             dataKey="az"
@@ -355,7 +381,13 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
           />
           <Tooltip
             cursor={{ stroke: '#9ca3af', strokeDasharray: '4 3' }}
-            content={(props: any) => <PathZoomTooltip {...props} data={data} visibleLines={visibleLines} />}
+            content={(props: any) => {
+              tooltipActiveRef.current = !!(props.active && props.payload?.length > 0)
+              tooltipIdxRef.current = props.active && props.payload?.[0]
+                ? ((props.payload[0].payload as { idx?: number }).idx ?? null)
+                : null
+              return <PathZoomTooltip {...props} data={data} visibleLines={visibleLines} />
+            }}
           />
           {!compactExport && (
             <Legend verticalAlign="top" height={20} wrapperStyle={{ fontSize: 13 }} />
@@ -401,6 +433,51 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
             line={false}
             isAnimationActive={false}
           />
+          {showDelta && !compactExport && (
+            <Customized component={(props: any) => {
+              const xAxis = props.xAxisMap && (Object.values(props.xAxisMap)[0] as any)
+              const yAxis = props.yAxisMap && (Object.values(props.yAxisMap)[0] as any)
+              const offset = props.offset
+              if (!xAxis?.scale || !yAxis?.scale || !offset) return null
+              const row = data[currentIndex]
+              if (!row) return null
+              const x1 = xAxis.scale(row.cs_target_az)
+              const y1 = yAxis.scale(row.cs_target_el)
+              const x2 = xAxis.scale(row.cur_az)
+              const y2 = yAxis.scale(row.cur_el)
+              const dx = x2 - x1, dy = y2 - y1
+              const dist = Math.sqrt(dx * dx + dy * dy)
+              if (dist < 4) return null
+              // Shorten the shaft so the stroke doesn't show through the arrowhead body
+              const ARROW = 16
+              const ux = dx / dist, uy = dy / dist
+              const sx2 = x2 - ux * ARROW, sy2 = y2 - uy * ARROW
+              const clipId = `${deltaMarkerId}-clip`
+              return (
+                <g>
+                  <defs>
+                    <clipPath id={clipId}>
+                      <rect x={offset.left} y={offset.top} width={offset.width} height={offset.height} />
+                    </clipPath>
+                    <marker
+                      id={deltaMarkerId}
+                      viewBox="0 0 16 12"
+                      refX="16" refY="6"
+                      markerUnits="userSpaceOnUse"
+                      markerWidth="16" markerHeight="12"
+                      orient="auto"
+                    >
+                      <polygon points="0 0, 16 6, 0 12" fill="#ef4444" />
+                    </marker>
+                  </defs>
+                  <g clipPath={`url(#${clipId})`}>
+                    <line x1={x1} y1={y1} x2={sx2} y2={sy2} stroke="#ef4444" strokeWidth={2} />
+                    <line x1={sx2} y1={sy2} x2={x2} y2={y2} stroke="#ef4444" strokeWidth={2} markerEnd={`url(#${deltaMarkerId})`} />
+                  </g>
+                </g>
+              )
+            }} />
+          )}
         </ScatterChart>
       </ResponsiveContainer>
       {!compactExport && isZoomed && (
@@ -426,13 +503,33 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
       )}
       {!compactExport && <ZoomControls onZoomIn={zoomIn} onZoomOut={zoomOut} />}
       {!compactExport && (
-        <button
-          type="button"
-          onClick={() => setShowDots(v => !v)}
-          className={`absolute top-1.5 right-2 z-10 h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
-        >
-          {showDots ? 'Hide dots' : 'Show dots'}
-        </button>
+        <div className="absolute top-1.5 right-2 z-10 flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setShowDots(v => !v)}
+            className={`h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDots ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+          >
+            {showDots ? 'Hide dots' : 'Show dots'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowDelta(v => {
+              if (!v) {
+                // Ensure Satellite Look Angle line is visible so the arrow start is shown
+                setVisibleLines(prev => {
+                  if (prev.has('cs_path')) return prev
+                  const next = new Set(prev)
+                  next.add('cs_path')
+                  return next
+                })
+              }
+              return !v
+            })}
+            className={`h-[22px] rounded border px-2 text-[10px] font-medium leading-none shadow-sm ${showDelta ? 'border-red-400 bg-red-50 text-red-700' : 'border-gray-300 bg-white/90 text-gray-600 hover:bg-gray-50'}`}
+          >
+            {showDelta ? 'Hide delta' : 'Show tracking delta'}
+          </button>
+        </div>
       )}
     </div>
   )
