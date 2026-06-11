@@ -149,7 +149,16 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
   const [azDomMin, azDomMax] = zoomAzDomain
   const sample = useMemo(() => getDynamicSample(zoomAzDomain, azDomain), [zoomAzDomain, azDomain])
 
-  // cur_az is monotonic → always computed regardless of visibility, used as zoom time reference
+  // target_az is monotonic with time — used as the time reference for slicing.
+  // cur_az is NOT monotonic (antenna oscillates during conical scan), so it cannot
+  // be used for azWindowToTimeDomain's binary search.
+  const allTargetData = useMemo(() => {
+    const out: { az: number; t: number }[] = []
+    for (let i = 0; i < data.length; i += sample)
+      out.push({ az: data[i].target_az, t: data[i].flightTimeMs })
+    return out
+  }, [data, sample])
+
   const allActualData = useMemo(() => {
     const out: { az: number; el: number; t: number; idx: number }[] = []
     for (let i = 0; i < data.length; i += sample)
@@ -172,15 +181,14 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
     return out
   }, [data, sample])
 
-  // Time domain derived from cur_az (monotonic) — used to slice all series consistently.
-  // Binary-searches allActualData (sorted by az) so this is O(log n) instead of O(n),
-  // which matters because it runs on every pan/zoom frame.
+  // Time domain derived from target_az (truly monotonic) — used to slice all series consistently.
+  // Binary-search is O(log n); runs on every pan/zoom frame so the reference must be monotonic.
   const visibleTimeDomain = useMemo<[number, number]>(() => {
-    const fallback: [number, number] = [allActualData[0]?.t ?? 0, allActualData[allActualData.length - 1]?.t ?? 0]
-    if (!isZoomed || allActualData.length === 0) return fallback
+    const fallback: [number, number] = [allTargetData[0]?.t ?? 0, allTargetData[allTargetData.length - 1]?.t ?? 0]
+    if (!isZoomed || allTargetData.length === 0) return fallback
     const buf = (azDomMax - azDomMin) * 0.1
-    return azWindowToTimeDomain(allActualData, azDomMin - buf, azDomMax + buf) ?? fallback
-  }, [allActualData, isZoomed, azDomMin, azDomMax])
+    return azWindowToTimeDomain(allTargetData, azDomMin - buf, azDomMax + buf) ?? fallback
+  }, [allTargetData, isZoomed, azDomMin, azDomMax])
 
   const actualData = useMemo(
     () => isZoomed ? sliceByTime(allActualData, visibleTimeDomain[0], visibleTimeDomain[1]) : allActualData,
