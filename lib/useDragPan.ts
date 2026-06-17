@@ -11,8 +11,30 @@ import type { PlotBounds } from './useChartZoom'
  * listener never holds stale domain values — without this the initial pan position would
  * be wrong after the first re-render caused by a previous pan call.
  *
+ * During a drag, visual feedback is provided by applying a CSS translate to the chart's
+ * data/grid SVG layers directly — bypassing React state and Recharts re-renders entirely.
+ * Axis groups (<g class="recharts-cartesian-axis">) and <defs> are excluded so they remain
+ * stationary.
+ *
+ * Every MID_DRAG_COMMIT_MS milliseconds the current drag position is committed to React
+ * state via flushSync so Recharts re-renders the newly revealed data at the edges. After
+ * the synchronous re-render the CSS transforms are cleared and the drag origin is reset,
+ * so subsequent motion continues smoothly from the newly committed domain with no visual
+ * snap or blank edges.
+ *
+ * The movable elements are collected once at mousedown and reused for every mousemove so
+ * querySelectorAll is never called in the hot path.
+ *
  * The listener is attached once (stable deps) so it never tears down mid-drag.
  */
+
+/**
+ * How often (ms) to commit pan state to React during a drag so edge data fills in.
+ * Longer = more smooth frames between commits, smaller snap at each commit.
+ * Shorter = more frequent data refresh, but commit snaps happen more often.
+ */
+const MID_DRAG_COMMIT_MS = 300
+
 export function useDragPan(
   containerRef: React.RefObject<HTMLDivElement | null>,
   plotBounds: PlotBounds,
@@ -40,9 +62,25 @@ export function useDragPan(
     xMin0: number; xRange: number
     yMin0: number; yRange: number
     plotW: number; plotH: number
+    /** SVG child layers to translate — excludes <defs> and axis groups. Cached at mousedown. */
+    movableEls: Element[]
   } | null>(null)
-  const rafRef = useRef<number | null>(null)
   const pendingRef = useRef<{ x: number; y: number } | null>(null)
+  /** Timestamp of last mid-drag commit — reset at mousedown. */
+  const lastCommitRef = useRef(0)
+
+  /** Collect the SVG layers that should move during drag (everything except axes and defs). */
+  function getMovableEls(container: HTMLDivElement): Element[] {
+    const svg = container.querySelector('svg')
+    if (!svg) return []
+    return Array.from(svg.children).filter(
+      (el) => el.tagName !== 'defs' && !el.classList.contains('recharts-cartesian-axis'),
+    )
+  }
+
+  function clearTransforms(els: Element[]) {
+    for (const el of els) (el as HTMLElement).style.transform = ''
+  }
 
   // Mousedown listener — stable (only re-attaches if containerRef changes)
   useEffect(() => {
@@ -65,11 +103,13 @@ export function useDragPan(
       if (!enabledRef.current) return
       const xd = xDomainRef.current
       const yd = yDomainRef.current
+      lastCommitRef.current = performance.now()
       dragDataRef.current = {
         startX: e.clientX, startY: e.clientY,
         xMin0: xd[0], xRange: xd[1] - xd[0],
         yMin0: yd[0], yRange: yd[1] - yd[0],
         plotW, plotH,
+        movableEls: getMovableEls(el),  // cached once — not re-queried on every mousemove
       }
       e.preventDefault()
     }
@@ -80,38 +120,70 @@ export function useDragPan(
   // Mousemove + mouseup — only active while a drag is in progress
   useEffect(() => {
     if (!isDragging) return
+
     const onMove = (e: MouseEvent) => {
       const d = dragDataRef.current
       if (!d) return
-      // Compute absolute offset from drag-start in domain units
+      const deltaX = e.clientX - d.startX
+      const deltaY = e.clientY - d.startY
+
+      // Translate only data/grid layers — axes stay fixed, no React re-render
+      const t = `translate(${deltaX}px,${deltaY}px)`
+      for (const el of d.movableEls) (el as HTMLElement).style.transform = t
+
+      // Track the domain values that correspond to the current visual position
       pendingRef.current = {
-        x: d.xMin0 - ((e.clientX - d.startX) / d.plotW) * d.xRange,
-        y: d.yMin0 + ((e.clientY - d.startY) / d.plotH) * d.yRange,
+        x: d.xMin0 - (deltaX / d.plotW) * d.xRange,
+        y: d.yMin0 + (deltaY / d.plotH) * d.yRange,
       }
-      if (rafRef.current === null) {
-        rafRef.current = requestAnimationFrame(() => {
-          rafRef.current = null
-          const p = pendingRef.current
-          if (!p) return
-          pendingRef.current = null
-          onPanXRef.current(p.x)
-          onPanYRef.current(p.y)
-        })
-      }
-    }
-    const onUp = () => {
-      if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+
+      // Periodically commit the current domain to React so Recharts re-renders and fills
+      // in the newly revealed data at the edges of the visible window.
+      const now = performance.now()
+      if (now - lastCommitRef.current < MID_DRAG_COMMIT_MS) return
+      lastCommitRef.current = now
+
       const p = pendingRef.current
-      if (p) { onPanXRef.current(p.x); onPanYRef.current(p.y); pendingRef.current = null }
+      // Clear transforms and commit the domain without flushSync — React renders
+      // asynchronously so this never blocks the input loop. There may be one frame
+      // where old data shows at zero transform before React finishes, but at a
+      // 300 ms interval the smooth CSS-transform phase dominates.
+      clearTransforms(d.movableEls)
+      onPanXRef.current(p.x)
+      onPanYRef.current(p.y)
+
+      // Re-anchor the drag origin at the current mouse position.
+      // Future deltas start at 0 from here so the next CSS translate is relative to the
+      // freshly committed domain, not the original mousedown position.
+      d.startX = e.clientX
+      d.startY = e.clientY
+      d.xMin0 = p.x
+      d.yMin0 = p.y
+      pendingRef.current = { x: p.x, y: p.y }
+    }
+
+    const onUp = () => {
+      // Clear the CSS transforms and commit the new domain in the same synchronous task.
+      // The browser cannot paint between these two operations, so the chart transitions
+      // directly from "old data + transform" to "new data + no transform" in one frame.
+      if (dragDataRef.current) clearTransforms(dragDataRef.current.movableEls)
+      const p = pendingRef.current
+      if (p) {
+        onPanXRef.current(p.x)
+        onPanYRef.current(p.y)
+        pendingRef.current = null
+      }
       dragDataRef.current = null
       setIsDragging(false)
     }
+
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     return () => {
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
-      if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
+      // Clear any leftover transforms if the drag was cancelled without a mouseup
+      if (dragDataRef.current) clearTransforms(dragDataRef.current.movableEls)
     }
   }, [isDragging])
 
