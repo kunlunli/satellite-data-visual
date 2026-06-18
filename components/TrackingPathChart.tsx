@@ -222,6 +222,10 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
   const prevZoomSizeRef = useRef<number | null>(null)
   const cachedElDomainRef = useRef<[number, number] | null>(null)
   const prevVisibleLinesRef = useRef<string>('')
+  // Tracks the midpoint of the last displayed Y window so zoom level changes re-centre
+  // on the user's current view rather than jumping back to the satellite path centre.
+  // Null when unzoomed → first zoom falls back to the satellite-path data scan.
+  const currentYCenterRef = useRef<number | null>(null)
   // Tooltip hover state tracked in refs so onClick can check without a re-render
   const tooltipActiveRef = useRef(false)
   const tooltipIdxRef = useRef<number | null>(null)
@@ -254,26 +258,31 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
       return [fullElMin, fullElMax]
     }
 
-    const [tMin, tMax] = visibleTimeDomain
-
-    // Always centre on target_el — a stable, monotonic anchor so toggling lines
-    // doesn't shift the visible window (fixes the downward-shift issue).
-    let satMin = Infinity, satMax = -Infinity
-    for (const row of data) {
-      if (row.flightTimeMs >= tMin && row.flightTimeMs <= tMax) {
-        if (row.target_el < satMin) satMin = row.target_el
-        if (row.target_el > satMax) satMax = row.target_el
-      }
-    }
-    const satCenter = isFinite(satMin) ? (satMin + satMax) / 2 : (fullElMin + fullElMax) / 2
-
     // Scale Y proportionally to the X zoom ratio so the Y range at maximum zoom-in
     // is always 0.5° regardless of how wide the full AZ domain is.
-    // At max zoom: xZoomRatio ≈ MIN_RANGE_RATIO (0.005) → half ≈ 0.25° → 0.5° total.
     const fullAzRange = Math.max(azDomain[1] - azDomain[0], 1e-6)
     const xZoomRatio = curSize / fullAzRange
     const half = Math.max(0.125, (fullElMax - fullElMin) / 2 * xZoomRatio)
-    const result: [number, number] = [satCenter - half, satCenter + half]
+
+    // Preserve the current Y center when zoom level or visible lines change so the
+    // user's view doesn't jump. Only scan satellite-path data on the very first zoom
+    // (currentYCenterRef.current === null, i.e. just left the unzoomed state).
+    let center: number
+    if (currentYCenterRef.current !== null) {
+      center = currentYCenterRef.current
+    } else {
+      const [tMin, tMax] = visibleTimeDomain
+      let satMin = Infinity, satMax = -Infinity
+      for (const row of data) {
+        if (row.flightTimeMs >= tMin && row.flightTimeMs <= tMax) {
+          if (row.target_el < satMin) satMin = row.target_el
+          if (row.target_el > satMax) satMax = row.target_el
+        }
+      }
+      center = isFinite(satMin) ? (satMin + satMax) / 2 : (fullElMin + fullElMax) / 2
+    }
+
+    const result: [number, number] = [center - half, center + half]
 
     prevZoomSizeRef.current = curSize
     prevVisibleLinesRef.current = visibleKey
@@ -291,6 +300,10 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
     const clamped = Math.max(fullElMin, Math.min(fullElMax - range, yPanStart))
     return [clamped, clamped + range] as [number, number]
   }, [yPanStart, zoomedElMin, zoomedElMax, fullElMin, fullElMax])
+
+  // Keep currentYCenterRef in sync with whatever Y window is actually displayed
+  // (includes any Y pan offset). Null when unzoomed so the next zoom starts fresh.
+  currentYCenterRef.current = isZoomed ? (yDomain[0] + yDomain[1]) / 2 : null
 
   const panY = useCallback((newMin: number) => { setYPanStart(newMin) }, [])
 
@@ -377,6 +390,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
             label={{ value: 'Azimuth (deg)', position: 'insideBottom', offset: -14, fontSize: 14 }}
           />
           <YAxis
+            width={60}
             dataKey="el"
             type="number"
             name="Elevation"

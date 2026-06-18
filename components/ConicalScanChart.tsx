@@ -113,6 +113,11 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
   // Refs so zoomedElevationDomain only updates when zoom LEVEL changes, not on pan.
   const prevZoomSizeRef = useRef<number | null>(null)
   const cachedElDomainRef = useRef<[number, number] | null>(null)
+  // Tracks the midpoint of the last displayed Y window (including any Y pan) so that
+  // changing the zoom level re-centres on the user's current view rather than jumping
+  // back to the satellite path centre. Null when not zoomed → first zoom falls back to
+  // the satellite-path data scan.
+  const currentYCenterRef = useRef<number | null>(null)
 
   // Tight Y window: show only the top series in the visible X range.
   // Uses visibleTimeDomain (from monotonic target_az) instead of azimuth-value filtering
@@ -141,33 +146,29 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
       return [fullElMin, fullElMax]
     }
 
-    const [tMin, tMax] = visibleTimeDomain
-    let s1Min = Infinity, s1Max = -Infinity
-    let s2Min = Infinity, s2Max = -Infinity
-    let s3Min = Infinity, s3Max = -Infinity
-
-    for (const row of data) {
-      if (row.flightTimeMs >= tMin && row.flightTimeMs <= tMax) {
-        if (row.cs_target_el < s1Min) s1Min = row.cs_target_el
-        if (row.cs_target_el > s1Max) s1Max = row.cs_target_el
-        if (row.cs_center_el < s2Min) s2Min = row.cs_center_el
-        if (row.cs_center_el > s2Max) s2Max = row.cs_center_el
-        if (row.target_el < s3Min) s3Min = row.target_el
-        if (row.target_el > s3Max) s3Max = row.target_el
-      }
-    }
-
-    // cs_target_el completes full circles within any time window, so its elevation span
-    // equals the full scan diameter regardless of zoom level — can't use data range to
-    // set the Y window size. Instead, size Y to match the X window (curSize), centred on
-    // the satellite path (target_el, monotonic and stable). At max zoom (0.5° X) → 0.5° Y.
-    const satCenter = isFinite(s3Min) && isFinite(s3Max)
-      ? (s3Min + s3Max) / 2
-      : (fullElMin + fullElMax) / 2
     const half = Math.max(curSize / 2, 0.25)  // Y window = X window, min 0.5°
 
-    let result: [number, number]
-    result = [satCenter - half, satCenter + half]
+    // When the zoom level changes, reuse the midpoint of the current Y window so the
+    // user's view doesn't jump. Only scan satellite-path data on the very first zoom
+    // (currentYCenterRef.current === null, i.e. just left the unzoomed state).
+    let center: number
+    if (currentYCenterRef.current !== null) {
+      center = currentYCenterRef.current
+    } else {
+      const [tMin, tMax] = visibleTimeDomain
+      let s3Min = Infinity, s3Max = -Infinity
+      for (const row of data) {
+        if (row.flightTimeMs >= tMin && row.flightTimeMs <= tMax) {
+          if (row.target_el < s3Min) s3Min = row.target_el
+          if (row.target_el > s3Max) s3Max = row.target_el
+        }
+      }
+      center = isFinite(s3Min) && isFinite(s3Max)
+        ? (s3Min + s3Max) / 2
+        : (fullElMin + fullElMax) / 2
+    }
+
+    const result: [number, number] = [center - half, center + half]
 
     prevZoomSizeRef.current = curSize
     cachedElDomainRef.current = result
@@ -184,6 +185,10 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
     const clamped = Math.max(fullElMin, Math.min(fullElMax - range, yPanStart))
     return [clamped, clamped + range] as [number, number]
   }, [yPanStart, zoomedElMin, zoomedElMax, fullElMin, fullElMax])
+
+  // Keep currentYCenterRef in sync with whatever Y window is actually displayed
+  // (includes any Y pan offset). Null when unzoomed so the next zoom starts fresh.
+  currentYCenterRef.current = isZoomed ? (yDomain[0] + yDomain[1]) / 2 : null
 
   const panY = useCallback((newMin: number) => { setYPanStart(newMin) }, [])
 
@@ -220,6 +225,7 @@ function ConicalScanChartInner({ data, currentIndex, height = 300 }: Props) {
               label={{ value: 'Azimuth (deg)', position: 'insideBottom', offset: -14, fontSize: 14 }}
             />
             <YAxis
+              width={60}
               dataKey="el"
               type="number"
               name="Elevation"
