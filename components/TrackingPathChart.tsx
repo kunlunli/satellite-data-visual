@@ -420,7 +420,7 @@ function TrackingPathChartInner({ data, currentIndex, height = 240, compactExpor
               data={actualData}
               fill="#3b82f6"
               line={{ stroke: '#3b82f6', strokeWidth: 1.2 }}
-              lineJointType="basis"
+              lineJointType="linear"
               shape={showDots ? DOT_SHAPE : NO_SHAPE}
               isAnimationActive={false}
             />
