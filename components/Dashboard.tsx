@@ -990,6 +990,7 @@ interface CP { data: SatelliteDataRow[]; currentIndex: number }
 
 
 const FULL_MARGIN = { top: 28, right: 24, bottom: 32, left: 40 }
+const RSSI_STEP_RAW = 84 // 2 dBm × 42 raw units per dBm
 
 // FULL_MARGIN + default Recharts YAxis width (60px), no right axis
 const FULL_PLOT_BOUNDS: PlotBounds = {
@@ -1422,6 +1423,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
 
 function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: CP & { combined: ViewKey[]; combinedLogs: LogEntry[]; fileName?: string }) {
   const [showDots, setShowDots] = useState(false)
+  const [yExpansionSteps, setYExpansionSteps] = useState(0)
   const d = (fill: string) => showDots ? { r: 4, fill, strokeWidth: 0 } : false as false
   const { timezone } = useTimezone()
   const useAbsoluteTime = timezone !== null
@@ -1472,19 +1474,28 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
     const buf = (hi - lo) * 0.1
     return allChartData.filter((r) => r.t >= lo - buf && r.t <= hi + buf)
   }, [allChartData, zoomDomain])
-  const rssiDomain = useMemo((): [number, number] => {
+  const rssiRawRange = useMemo(() => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
     for (const r of data) chk(r.rssi)
     for (const log of combinedLogs) for (const r of log.data) chk(r.rssi)
-    if (!Number.isFinite(min)) return [0, 1]
-    const pad = Math.max((max - min) * 0.05, 0.1)
-    return [min - pad, max + pad]
+    return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
   }, [data, combinedLogs])
+  const rssiDomain = useMemo((): [number, number] => {
+    const { min, max } = rssiRawRange
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    return [min - pad, max + pad + yExpansionSteps * RSSI_STEP_RAW]
+  }, [rssiRawRange, yExpansionSteps])
   const rssiTicks = useMemo(
     () => makeRssiTicks(rssiDomain[0], rssiDomain[1]),
     [rssiDomain],
   )
+  const canReduceY = useMemo(() => {
+    const { min, max } = rssiRawRange
+    const pad = Math.max((max - min) * 0.05, 0.1)
+    const nextSteps = yExpansionSteps - 1
+    return makeRssiTicks(min - pad, max + pad + nextSteps * RSSI_STEP_RAW).length >= 2
+  }, [rssiRawRange, yExpansionSteps])
   const paeOverlayDomain_rssi = useMemo((): [number, number] => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
@@ -1588,6 +1599,37 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             )}
           </LineChart>
         </ResponsiveContainer>
+        <div className="absolute left-[10px] top-1/2 z-10 flex -translate-y-1/2 flex-col gap-0.5">
+          <button
+            type="button"
+            onClick={() => setYExpansionSteps((s) => s - 1)}
+            disabled={!canReduceY}
+            className="flex h-[20px] w-[20px] items-center justify-center rounded border border-gray-300 bg-white/90 text-[11px] font-medium leading-none text-gray-600 shadow-sm hover:bg-gray-50 active:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Increase Y-axis range"
+            aria-label="Increase Y-axis range"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => setYExpansionSteps((s) => s + 1)}
+            className="flex h-[20px] w-[20px] items-center justify-center rounded border border-gray-300 bg-white/90 text-[11px] font-medium leading-none text-gray-600 shadow-sm hover:bg-gray-50 active:bg-gray-100"
+            title="Reduce Y-axis range"
+            aria-label="Reduce Y-axis range"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            onClick={() => setYExpansionSteps(0)}
+            disabled={yExpansionSteps === 0}
+            className="flex h-[20px] w-[20px] items-center justify-center rounded border border-gray-300 bg-white/90 text-[9px] font-medium leading-none text-gray-600 shadow-sm hover:bg-gray-50 active:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Reset Y-axis range"
+            aria-label="Reset Y-axis range"
+          >
+            ↺
+          </button>
+        </div>
         <ChartLegend primaryLabel={fileName} primaryColor="#7c3aed" primaryDualLine={false} lines={lines} />
       </div>
       {isZoomed && (
