@@ -1375,15 +1375,15 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
                 return [v.toFixed(4), name]
               }} />
             {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} isAnimationActive={false} />}
-            {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} strokeDasharray="5 3" isAnimationActive={false} />}
+            {!hiddenLines.includes('paeY') && <Line yAxisId="pae" type="monotone" dataKey="paeY" name="PAE Y" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} isAnimationActive={false} />}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
@@ -1391,7 +1391,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
               const lbl = logLabel(log)
               return [
                 <Line key={`${log.id}_pX`} yAxisId="pae" type="monotone" dataKey={`paeX_${i}`} name={`PAE X · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />,
-                <Line key={`${log.id}_pY`} yAxisId="pae" type="monotone" dataKey={`paeY_${i}`} name={`PAE Y · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />,
+                <Line key={`${log.id}_pY`} yAxisId="pae" type="monotone" dataKey={`paeY_${i}`} name={`PAE Y · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />,
               ]
             })}
             <ReferenceLine yAxisId="pae" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={2} />
@@ -1574,16 +1574,16 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
               ]} />
             {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={d('#7c3aed')} strokeWidth={2} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('az') && (
-              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="azOverlay" type="monotone" dataKey="az" name="Azimuth" stroke="#16a34a" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('azel') && !hiddenLines.includes('el') && (
-              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="elOverlay" type="monotone" dataKey="el" name="Elevation" stroke="#0891b2" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               if (hiddenLines.includes(`log_${log.id}`)) return []
@@ -1791,20 +1791,20 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={1.5} isAnimationActive={false} />}
             {!hiddenLines.includes('el') && <Line yAxisId="el" type="monotone" dataKey="el" name="Elevation" stroke="#ea580c" dot={d('#ea580c')} strokeWidth={1.5} isAnimationActive={false} />}
             {combined.includes('pae') && !hiddenLines.includes('paeX') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" strokeDasharray="5 3" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeX" name="PAE X" stroke="#16a34a" dot={d('#16a34a')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('pae') && !hiddenLines.includes('paeY') && (
-              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" strokeDasharray="5 3" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="paeOverlay" type="monotone" dataKey="paeY" name="PAE Y" stroke="#0891b2" dot={d('#0891b2')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combined.includes('rssi') && !hiddenLines.includes('rssi') && (
-              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" strokeDasharray="5 3" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
+              <Line yAxisId="rssiOverlay" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={d('#7c3aed')} strokeWidth={1.5} isAnimationActive={false} />
             )}
             {combinedLogs.flatMap((log, i) => {
               const color = LOG_COLORS[i % LOG_COLORS.length]
               const lbl = logLabel(log)
               return [
                 ...(!hiddenLines.includes('az') ? [<Line key={`${log.id}_az`} yAxisId="az" type="monotone" dataKey={`az_${i}`} name={`Az · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />] : []),
-                ...(!hiddenLines.includes('el') ? [<Line key={`${log.id}_el`} yAxisId="el" type="monotone" dataKey={`el_${i}`} name={`El · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} strokeDasharray="5 3" isAnimationActive={false} />] : []),
+                ...(!hiddenLines.includes('el') ? [<Line key={`${log.id}_el`} yAxisId="el" type="monotone" dataKey={`el_${i}`} name={`El · ${lbl}`} stroke={color} dot={d(color)} strokeWidth={1.5} isAnimationActive={false} />] : []),
               ]
             })}
             <ReferenceLine yAxisId="az" x={currentTime} stroke="#10b981" strokeDasharray="4 2" strokeWidth={1.5} />
