@@ -22,7 +22,10 @@
       "Bash(curl *)",
       "Bash(npx tsc *)",
       "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('react:', p.dependencies.react, 'react-dom:', p.dependencies['react-dom']\\)\")",
-      "Bash(node -e \"const r=require\\('./node_modules/recharts'\\); console.log\\(Object.keys\\(r\\).filter\\(k=>k.includes\\('Custom'\\)||k.includes\\('Ref'\\)||k.includes\\('Layer'\\)\\)\\)\")"
+      "Bash(node -e \"const r=require\\('./node_modules/recharts'\\); console.log\\(Object.keys\\(r\\).filter\\(k=>k.includes\\('Custom'\\)||k.includes\\('Ref'\\)||k.includes\\('Layer'\\)\\)\\)\")",
+      "Skill(run)",
+      "Skill(claude-in-chrome)",
+      "Bash(pkill -f \"next dev\")"
     ]
   }
 }

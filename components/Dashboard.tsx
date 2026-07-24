@@ -1015,7 +1015,21 @@ const HIDDEN_AXIS_PROPS = { hide: true, width: 0, domain: ['auto', 'auto'] as [s
 const LOG_COLORS = ['#f59e0b', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4', '#84cc16', '#f97316']
 const logLabel = (log: LogEntry) => log.fileName.replace(/\.[^.]+$/, '').slice(0, 22)
 
-interface LineSpec { key: string; label: string; color: string; dashed?: boolean; dualLine?: boolean }
+interface LineSpec { key: string; label: string; color: string; dashed?: boolean; dualLine?: boolean; extra?: string }
+
+/** Mean of sqrt(paeX² + paeY²) across all rows — the overall PAE for a whole log. */
+function avgOverallPae(rows: SatelliteDataRow[]): number | null {
+  if (rows.length === 0) return null
+  let sum = 0
+  let count = 0
+  for (const r of rows) {
+    if (Number.isFinite(r.pae_joint_X) && Number.isFinite(r.pae_joint_Y)) {
+      sum += Math.sqrt(r.pae_joint_X ** 2 + r.pae_joint_Y ** 2)
+      count++
+    }
+  }
+  return count > 0 ? sum / count : null
+}
 
 function LineToggleBar({ lines, hidden, onToggle }: { lines: LineSpec[]; hidden: string[]; onToggle: (k: string) => void }) {
   const primaryLines = lines.filter((l) => !l.key.startsWith('log_'))
@@ -1152,11 +1166,13 @@ function ChartLegend({
   primaryLabel,
   primaryColor,
   primaryDualLine,
+  primaryExtra,
   lines,
 }: {
   primaryLabel: string
   primaryColor: string
   primaryDualLine: boolean
+  primaryExtra?: string
   lines: LineSpec[]
 }) {
   const [visible, setVisible] = useState(true)
@@ -1197,11 +1213,13 @@ function ChartLegend({
       <div className="clt-row">
         <LogLineIcon color={primaryColor} dual={primaryDualLine} />
         <span className="clt-label">{primaryLabel || 'Active log'}</span>
+        {primaryExtra && <span className="clt-extra">{primaryExtra}</span>}
       </div>
       {combinedLines.map((line) => (
         <div key={line.key} className="clt-row">
           <LogLineIcon color={line.color} dual={line.dualLine} />
           <span className="clt-label">{line.label}</span>
+          {line.extra && <span className="clt-extra">{line.extra}</span>}
         </div>
       ))}
     </div>
@@ -1323,6 +1341,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
   const currentPaeX = data[currentIndex]?.pae_joint_X
   const currentPaeY = data[currentIndex]?.pae_joint_Y
+  const primaryAvgPae = useMemo(() => avgOverallPae(data), [data])
   const [hiddenLines, setHiddenLines] = useState<string[]>([])
   const toggleLine = useCallback((k: string) => setHiddenLines((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]), [])
   const lines = useMemo<LineSpec[]>(() => {
@@ -1335,7 +1354,16 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
       base.push({ key: 'az', label: 'Azimuth', color: '#16a34a' })
       base.push({ key: 'el', label: 'Elevation', color: '#0891b2' })
     }
-    combinedLogs.forEach((log, i) => base.push({ key: `log_${log.id}`, label: logLabel(log), color: LOG_COLORS[i % LOG_COLORS.length], dualLine: true }))
+    combinedLogs.forEach((log, i) => {
+      const avg = avgOverallPae(log.data)
+      base.push({
+        key: `log_${log.id}`,
+        label: logLabel(log),
+        color: LOG_COLORS[i % LOG_COLORS.length],
+        dualLine: true,
+        extra: avg != null ? `Avg PAE ${avg.toFixed(4)}°` : undefined,
+      })
+    })
     return base
   }, [combined, combinedLogs])
   useEffect(() => {
@@ -1403,7 +1431,13 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
             )}
           </LineChart>
         </ResponsiveContainer>
-        <ChartLegend primaryLabel={fileName} primaryColor="#2563eb" primaryDualLine lines={lines} />
+        <ChartLegend
+          primaryLabel={fileName}
+          primaryColor="#2563eb"
+          primaryDualLine
+          primaryExtra={primaryAvgPae != null ? `Avg PAE ${primaryAvgPae.toFixed(4)}°` : undefined}
+          lines={lines}
+        />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}
