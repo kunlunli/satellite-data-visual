@@ -1017,18 +1017,18 @@ const logLabel = (log: LogEntry) => log.fileName.replace(/\.[^.]+$/, '').slice(0
 
 interface LineSpec { key: string; label: string; color: string; dashed?: boolean; dualLine?: boolean; extra?: string }
 
-/** Mean of sqrt(paeX² + paeY²) across all rows — the overall PAE for a whole log. */
+/** RMS of sqrt(paeX² + paeY²) across all rows — the overall PAE for a whole log. */
 function avgOverallPae(rows: SatelliteDataRow[]): number | null {
   if (rows.length === 0) return null
-  let sum = 0
+  let sumSq = 0
   let count = 0
   for (const r of rows) {
     if (Number.isFinite(r.pae_joint_X) && Number.isFinite(r.pae_joint_Y)) {
-      sum += Math.sqrt(r.pae_joint_X ** 2 + r.pae_joint_Y ** 2)
+      sumSq += r.pae_joint_X ** 2 + r.pae_joint_Y ** 2
       count++
     }
   }
-  return count > 0 ? sum / count : null
+  return count > 0 ? Math.sqrt(sumSq / count) : null
 }
 
 function LineToggleBar({ lines, hidden, onToggle }: { lines: LineSpec[]; hidden: string[]; onToggle: (k: string) => void }) {
@@ -1361,7 +1361,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
         label: logLabel(log),
         color: LOG_COLORS[i % LOG_COLORS.length],
         dualLine: true,
-        extra: avg != null ? `Avg PAE ${avg.toFixed(4)}°` : undefined,
+        extra: avg != null ? `RMS PAE ${avg.toFixed(4)}°` : undefined,
       })
     })
     return base
@@ -1435,7 +1435,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
           primaryLabel={fileName}
           primaryColor="#2563eb"
           primaryDualLine
-          primaryExtra={primaryAvgPae != null ? `Avg PAE ${primaryAvgPae.toFixed(4)}°` : undefined}
+          primaryExtra={primaryAvgPae != null ? `RMS PAE ${primaryAvgPae.toFixed(4)}°` : undefined}
           lines={lines}
         />
       </div>
