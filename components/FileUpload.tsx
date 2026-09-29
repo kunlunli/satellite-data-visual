@@ -93,15 +93,15 @@ export default function FileUpload({ onFiles, loading }: Props) {
           <p className="ut-subtext">
             {dragging
               ? 'INCOMING FEED DETECTED — READY TO INGEST'
-              : 'DRAG .TXT / .LOG FILES OR CLICK TO BROWSE'}
+              : 'DRAG .TXT / .LOG / .CSV / .XLSX FILES OR CLICK TO BROWSE'}
           </p>
           <p className="ut-spec">
-            FORMAT: CSV LOG (.txt / .log) · 15 COLUMNS · TIMESTAMP, AZ, EL, PAE, CS, RSSI, TX
+            FORMAT: CSV LOG OR EXCEL (.txt / .log / .csv / .xlsx) · 15 COLUMNS · TIMESTAMP, AZ, EL, PAE, CS, RSSI, TX
           </p>
         </div>
       )}
 
-      <input type="file" accept=".txt,.log,.csv" multiple className="hidden" onChange={handleChange} />
+      <input type="file" accept=".txt,.log,.csv,.xlsx,.xls" multiple className="hidden" onChange={handleChange} />
     </label>
   )
 }

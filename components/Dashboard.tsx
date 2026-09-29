@@ -231,8 +231,8 @@ export default function Dashboard() {
       if (failNames.length > 0) {
         setError(
           failNames.length === 1
-            ? `Failed to parse "${failNames[0]}". Make sure it is a valid .txt or .log with 15 comma-separated columns.`
-            : `Failed to parse ${failNames.length} files: ${failNames.join(', ')}. Make sure each is a valid .txt or .log with 15 comma-separated columns.`
+            ? `Failed to parse "${failNames[0]}". Make sure it is a valid .txt, .log, .csv, or .xlsx file with at least 14 columns.`
+            : `Failed to parse ${failNames.length} files: ${failNames.join(', ')}. Make sure each is a valid .txt, .log, .csv, or .xlsx file with at least 14 columns.`
         )
       }
     } finally {
@@ -452,7 +452,7 @@ export default function Dashboard() {
       <input
         ref={hiddenFileInputRef}
         type="file"
-        accept=".txt,.log,.csv"
+        accept=".txt,.log,.csv,.xlsx,.xls"
         multiple
         className="hidden"
         onChange={(e) => {
@@ -1031,6 +1031,34 @@ function avgOverallPae(rows: SatelliteDataRow[]): number | null {
   return count > 0 ? Math.sqrt(sumSq / count) : null
 }
 
+/**
+ * Peak-to-peak ripple and standard deviation of RSSI (dB) for a whole log.
+ * Low outliers (signal dropouts) are removed first with iterative 3-sigma
+ * clipping: values below mean − 3σ are discarded until none remain.
+ */
+function rssiRippleStats(rows: SatelliteDataRow[]): { p2p: number; std: number } | null {
+  let vals = rows.map((r) => rssiToDbm(r.rssi)).filter((v) => Number.isFinite(v))
+  if (vals.length === 0) return null
+  const meanStd = (xs: number[]) => {
+    const mean = xs.reduce((s, v) => s + v, 0) / xs.length
+    const std = Math.sqrt(xs.reduce((s, v) => s + (v - mean) ** 2, 0) / xs.length)
+    return { mean, std }
+  }
+  for (let iter = 0; iter < 20; iter++) {
+    const { mean, std } = meanStd(vals)
+    const kept = vals.filter((v) => v >= mean - 3 * std)
+    if (kept.length === vals.length || kept.length === 0) break
+    vals = kept
+  }
+  let min = Infinity, max = -Infinity
+  for (const v of vals) { if (v < min) min = v; if (v > max) max = v }
+  return { p2p: max - min, std: meanStd(vals).std }
+}
+
+function formatRssiStats(s: ReturnType<typeof rssiRippleStats>): string | undefined {
+  return s ? `P-P ${s.p2p.toFixed(2)} dB · STD ${s.std.toFixed(2)} dB` : undefined
+}
+
 function LineToggleBar({ lines, hidden, onToggle }: { lines: LineSpec[]; hidden: string[]; onToggle: (k: string) => void }) {
   const primaryLines = lines.filter((l) => !l.key.startsWith('log_'))
   return (
@@ -1567,9 +1595,16 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       base.push({ key: 'az', label: 'Azimuth', color: '#16a34a' })
       base.push({ key: 'el', label: 'Elevation', color: '#0891b2' })
     }
-    combinedLogs.forEach((log, i) => base.push({ key: `log_${log.id}`, label: logLabel(log), color: LOG_COLORS[i % LOG_COLORS.length], dualLine: false }))
+    combinedLogs.forEach((log, i) => base.push({
+      key: `log_${log.id}`,
+      label: logLabel(log),
+      color: LOG_COLORS[i % LOG_COLORS.length],
+      dualLine: false,
+      extra: formatRssiStats(rssiRippleStats(log.data)),
+    }))
     return base
   }, [combined, combinedLogs])
+  const primaryRssiStats = useMemo(() => rssiRippleStats(data), [data])
   useEffect(() => {
     const valid = lines.map((l) => l.key)
     setHiddenLines((p) => p.filter((k) => valid.includes(k)))
@@ -1664,7 +1699,8 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             ↺
           </button>
         </div>
-        <ChartLegend primaryLabel={fileName} primaryColor="#7c3aed" primaryDualLine={false} lines={lines} />
+        <ChartLegend primaryLabel={fileName} primaryColor="#7c3aed" primaryDualLine={false}
+          primaryExtra={formatRssiStats(primaryRssiStats)} lines={lines} />
       </div>
       {isZoomed && (
         <ZoomScrollbar className="shrink-0" fullDomain={timeDomain} visibleDomain={zoomDomain} onPan={pan}

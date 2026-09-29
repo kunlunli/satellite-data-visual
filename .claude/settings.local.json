@@ -25,7 +25,8 @@
       "Bash(node -e \"const r=require\\('./node_modules/recharts'\\); console.log\\(Object.keys\\(r\\).filter\\(k=>k.includes\\('Custom'\\)||k.includes\\('Ref'\\)||k.includes\\('Layer'\\)\\)\\)\")",
       "Skill(run)",
       "Skill(claude-in-chrome)",
-      "Bash(pkill -f \"next dev\")"
+      "Bash(pkill -f \"next dev\")",
+      "Bash(node scripts/check-wrap.js)"
     ]
   }
 }
