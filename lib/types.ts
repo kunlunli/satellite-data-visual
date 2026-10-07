@@ -1,4 +1,4 @@
-export type ViewKey = 'azel' | 'pae' | 'rssi'
+export type ViewKey = 'azel' | 'pae' | 'rssi' | 'motor'
 
 export interface SatelliteDataRow {
   timestamp: number
