@@ -96,7 +96,7 @@ export default function FileUpload({ onFiles, loading }: Props) {
               : 'DRAG .TXT / .LOG / .CSV / .XLSX FILES OR CLICK TO BROWSE'}
           </p>
           <p className="ut-spec">
-            FORMAT: CSV LOG OR EXCEL (.txt / .log / .csv / .xlsx) · 15 COLUMNS · TIMESTAMP, AZ, EL, PAE, CS, RSSI, TX
+            FORMAT: CSV LOG OR EXCEL (.txt / .log / .csv / .xlsx) · 15–16 COLUMNS · TIMESTAMP, AZ, EL, PAE, CS, RSSI, NBD, TX
           </p>
         </div>
       )}

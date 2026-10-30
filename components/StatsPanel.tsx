@@ -41,7 +41,7 @@ export default function StatsPanel({ data, currentIndex }: Props) {
       </div>
       <div>
         <StatRow label="PAE" value={`${pae.toFixed(4)}°`} color="text-red-500" />
-        <StatRow label="RSSI" value={r.rssi.toFixed(1)} color="text-purple-600" />
+        <StatRow label="RSSI (dBm)" value={r.nbd.toFixed(1)} color="text-purple-600" />
       </div>
     </div>
   )

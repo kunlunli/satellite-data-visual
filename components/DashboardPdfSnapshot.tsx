@@ -10,7 +10,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer } fro
 import type { SatelliteDataRow, ViewKey } from '@/lib/types'
 import { formatFlightTime } from '@/lib/parseData'
 import { formatScrubMetric } from '@/lib/formatScrubMetric'
-import { makeAutoTimeTicks, makeRssiTicks, rssiToDbm } from '@/lib/timeSeriesChartLayout'
+import { makeAutoTimeTicks, makeRssiTicks } from '@/lib/timeSeriesChartLayout'
 
 export type PdfReportType = 'dashboard' | 'azel' | 'pae' | 'rssi'
 
@@ -43,7 +43,7 @@ function PdfSkyMetricsPanel({ row, width }: { row: SatelliteDataRow; width: numb
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°') },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°') },
-    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm') },
+    { label: 'RSSI', value: formatScrubMetric(row.nbd, 2, ' dBm') },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°') },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°') },
   ]
@@ -93,7 +93,7 @@ function PdfTimelineMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   const cols = [
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#60a5fa' },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#fb923c' },
-    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm'), color: '#c084fc' },
+    { label: 'RSSI', value: formatScrubMetric(row.nbd, 2, ' dBm'), color: '#c084fc' },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#60a5fa' },
     { label: 'PAE Y', value: formatScrubMetric(row.pae_joint_Y, 4, '°'), color: '#ea580c' },
   ]
@@ -199,7 +199,7 @@ function PdfPaeMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
 
 function PdfRssiMetricsBarSvg({ row }: { row: SatelliteDataRow }) {
   const cols = [
-    { label: 'RSSI', value: formatScrubMetric(rssiToDbm(row.rssi), 2, ' dBm'), color: '#c084fc' },
+    { label: 'RSSI', value: formatScrubMetric(row.nbd, 2, ' dBm'), color: '#c084fc' },
     { label: 'Azimuth', value: formatScrubMetric(row.cur_az, 3, '°'), color: '#94a3b8' },
     { label: 'Elevation', value: formatScrubMetric(row.cur_el, 3, '°'), color: '#94a3b8' },
     { label: 'PAE X', value: formatScrubMetric(row.pae_joint_X, 4, '°'), color: '#94a3b8' },
@@ -230,12 +230,12 @@ const PDF_LABEL = 24
 function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[]; combined: ViewKey[]; height: number }) {
   const chartData = data.filter((_, i) => i % STATIC_SAMPLE === 0).map((r) => ({
     t: r.flightTimeMs,
-    rssi: r.rssi,
+    rssi: r.nbd,
     ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
     ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
   }))
   let rMin = Infinity, rMax = -Infinity
-  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  for (const r of data) { if (r.nbd < rMin) rMin = r.nbd; if (r.nbd > rMax) rMax = r.nbd }
   const rssiTicks = makeRssiTicks(rMin, rMax)
   const rDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
   const timeTicks = chartData.length > 0
@@ -264,7 +264,7 @@ function StaticRssiChart({ data, combined, height }: { data: SatelliteDataRow[];
           <XAxis dataKey="t" type="number" ticks={timeTicks} tickFormatter={formatFlightTime} tick={{ fontSize: PDF_TICK }}
             label={{ value: 'Flight Time', position: 'insideBottom', offset: -24, fontSize: PDF_LABEL }} />
           <YAxis yAxisId="rssi" orientation="left" width={90} domain={rDomain} ticks={rssiTicks}
-            tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+            tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
             label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -37, fontSize: PDF_LABEL }} />
           {combined.includes('pae') && (
             <YAxis yAxisId="paeOverlay" orientation="right" width={90} domain={paeDomain}
@@ -297,7 +297,7 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
     t: r.flightTimeMs,
     paeX: r.pae_joint_X,
     paeY: r.pae_joint_Y,
-    ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+    ...(combined.includes('rssi') ? { rssi: r.nbd } : {}),
     ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
   }))
   let pMin = Infinity, pMax = -Infinity
@@ -311,7 +311,7 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
     ? makeAutoTimeTicks(chartData[0].t, chartData[chartData.length - 1].t)
     : []
   let rMin = Infinity, rMax = -Infinity
-  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  for (const r of data) { if (r.nbd < rMin) rMin = r.nbd; if (r.nbd > rMax) rMax = r.nbd }
   const rssiTicks = makeRssiTicks(rMin, rMax)
   const rssiDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
   let azMin = Infinity, azMax = -Infinity
@@ -333,7 +333,7 @@ function StaticPaeChart({ data, combined, height }: { data: SatelliteDataRow[]; 
             label={{ value: 'PAE (°)', angle: 0, position: 'insideTopLeft', dy: -37, fontSize: PDF_LABEL }} />
           {combined.includes('rssi') && (
             <YAxis yAxisId="rssiOverlay" orientation="right" width={90} domain={rssiDomain} ticks={rssiTicks}
-              tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
               label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
           )}
           {combined.includes('azel') && (
@@ -363,7 +363,7 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
     az: r.cur_az,
     el: r.cur_el,
     ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
-    ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+    ...(combined.includes('rssi') ? { rssi: r.nbd } : {}),
   }))
   let azMin = Infinity, azMax = -Infinity, elMin = Infinity, elMax = -Infinity
   for (const r of data) {
@@ -385,7 +385,7 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
   const paePad = Math.max((paeMax - paeMin) * 0.05, 0.0001)
   const paeDomain: [number, number] = Number.isFinite(paeMin) ? [paeMin - paePad, paeMax + paePad] : [0, 1]
   let rMin = Infinity, rMax = -Infinity
-  for (const r of data) { if (r.rssi < rMin) rMin = r.rssi; if (r.rssi > rMax) rMax = r.rssi }
+  for (const r of data) { if (r.nbd < rMin) rMin = r.nbd; if (r.nbd > rMax) rMax = r.nbd }
   const rssiTicks = makeRssiTicks(rMin, rMax)
   const rssiDomain: [number, number] = rssiTicks.length > 0 ? [rssiTicks[0], rssiTicks[rssiTicks.length - 1]] : [0, 1]
   const rightPad = 90 + (combined.includes('pae') ? 90 : 0) + (combined.includes('rssi') ? 90 : 0)
@@ -408,7 +408,7 @@ function StaticAzElChart({ data, combined, height }: { data: SatelliteDataRow[];
           )}
           {combined.includes('rssi') && (
             <YAxis yAxisId="rssiOverlay" orientation="right" width={90} domain={rssiDomain} ticks={rssiTicks}
-              tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: PDF_TICK }}
+              tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: PDF_TICK }}
               label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -37, fontSize: PDF_LABEL }} />
           )}
           <Line yAxisId="az" type="monotone" dataKey="az" stroke="#2563eb" dot={false} strokeWidth={1.5} isAnimationActive={false} />

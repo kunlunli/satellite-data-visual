@@ -124,27 +124,19 @@ export function makeZoomAwareTimeTicks(
   return makeAutoTimeTicks(lo, hi, inSeconds)
 }
 
-/** Convert raw RSSI sensor value to dBm. */
+/** Convert raw RSSI sensor value to dBm (fallback for logs without an nbd column). */
 export function rssiToDbm(raw: number): number {
   return raw / 42 - 88.81
 }
 
-/**
- * Generates raw-RSSI tick values every 2 dBm.
- * Ticks are placed at round dBm boundaries and converted back to raw so
- * the axis (stored in raw units) labels display as round dBm numbers.
- */
-export function makeRssiTicks(minRaw: number, maxRaw: number): number[] {
-  if (!Number.isFinite(minRaw) || !Number.isFinite(maxRaw)) return []
-  const minDbm = rssiToDbm(minRaw)
-  const maxDbm = rssiToDbm(maxRaw)
+/** Generates signal-level (dBm) tick values on round 2 dBm boundaries. */
+export function makeRssiTicks(minDbm: number, maxDbm: number): number[] {
+  if (!Number.isFinite(minDbm) || !Number.isFinite(maxDbm)) return []
   const interval = 2 // 2 dBm
   const firstDbm = Math.floor(minDbm / interval) * interval
   const lastDbm = Math.ceil(maxDbm / interval) * interval
   const ticks: number[] = []
-  for (let dbm = firstDbm; dbm <= lastDbm; dbm += interval) {
-    ticks.push((dbm + 88.81) * 42)
-  }
+  for (let dbm = firstDbm; dbm <= lastDbm; dbm += interval) ticks.push(dbm)
   return ticks
 }
 

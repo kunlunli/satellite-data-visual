@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import type { SatelliteDataRow } from './types'
+import { rssiToDbm } from './timeSeriesChartLayout'
 
 // Columns (0-indexed, comma-separated, no header):
 //  0  timestamp            – microseconds since epoch
@@ -15,8 +16,12 @@ import type { SatelliteDataRow } from './types'
 // 10  cs_center_el         – conical scan central elevation (deg)
 // 11  cs_target_az         – conical scan target azimuth (deg)
 // 12  cs_target_el         – conical scan target elevation (deg)
-// 13  rssi                 – received signal strength indicator
-// 14  tx_enable            – transmit enabled (true/false)
+// 13  rssi                 – received signal strength indicator (raw)
+// 14  nbd                  – NBD signal level (dBm); newer logs only
+// 15  tx_enable            – transmit enabled (true/false)
+//
+// Older logs have no nbd column: tx_enable (if present) sits at index 14 and
+// the signal level is derived from the raw rssi instead.
 
 const EXCEL_EXTENSIONS = ['.xlsx', '.xls', '.xlsm']
 
@@ -129,6 +134,13 @@ export async function parseLogFile(file: File): Promise<SatelliteDataRow[]> {
       timestamp = parsed
     }
 
+    // Newer logs insert a numeric nbd column after rssi; in older logs that
+    // slot is either absent or holds the tx_enable boolean.
+    const rssi = Number(cols[13])
+    const col14 = cols.length > 14 ? String(cols[14]).trim() : ''
+    const hasNbd = col14 !== '' && !isNaN(Number(col14)) && !/^(true|false)$/i.test(col14)
+    const txIdx = hasNbd ? 15 : 14
+
     rows.push({
       timestamp,
       cur_joint_Y:  Number(cols[1]),
@@ -143,8 +155,9 @@ export async function parseLogFile(file: File): Promise<SatelliteDataRow[]> {
       cs_center_el: Number(cols[10]),
       cs_target_az: Number(cols[11]),
       cs_target_el: Number(cols[12]),
-      rssi:         Number(cols[13]),
-      tx_enable:    cols.length > 14 ? String(cols[14]).trim().toLowerCase() === 'true' : false,
+      rssi,
+      nbd:          hasNbd ? Number(col14) : rssiToDbm(rssi),
+      tx_enable:    cols.length > txIdx ? String(cols[txIdx]).trim().toLowerCase() === 'true' : false,
       flightTimeMs: 0,
     })
   }

@@ -637,7 +637,7 @@ export default function Dashboard() {
                   <div className="timeline-float-metric">
                     <span className="timeline-float-metric-label">RSSI</span>
                     <span className="timeline-float-metric-value accent-rssi">
-                      {formatScrubMetric(rssiToDbm(scrubRow.rssi), 2, ' dBm')}
+                      {formatScrubMetric(scrubRow.nbd, 2, ' dBm')}
                     </span>
                   </div>
                   <div className="timeline-float-metric">
@@ -1033,7 +1033,7 @@ import {
   LineChart, Line, ReferenceLine,
   ReferenceDot,
 } from 'recharts'
-import { sliceByTime, makeZoomAwareTimeTicks, makeRssiTicks, rssiToDbm, getDynamicSample } from '@/lib/timeSeriesChartLayout'
+import { sliceByTime, makeZoomAwareTimeTicks, makeRssiTicks, getDynamicSample } from '@/lib/timeSeriesChartLayout'
 import { useChartZoom, type PlotBounds } from '@/lib/useChartZoom'
 import { ZoomControls } from '@/components/ZoomControls'
 import { ZoomScrollbar } from '@/components/ZoomScrollbar'
@@ -1192,7 +1192,7 @@ function avgOverallPae(rows: SatelliteDataRow[]): number | null {
  * clipping: values below mean − 3σ are discarded until none remain.
  */
 function rssiRippleStats(rows: SatelliteDataRow[]): { p2p: number; std: number } | null {
-  let vals = rows.map((r) => rssiToDbm(r.rssi)).filter((v) => Number.isFinite(v))
+  let vals = rows.map((r) => r.nbd).filter((v) => Number.isFinite(v))
   if (vals.length === 0) return null
   const meanStd = (xs: number[]) => {
     const mean = xs.reduce((s, v) => s + v, 0) / xs.length
@@ -1479,14 +1479,14 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
         ...(combined.includes('motor') ? { motorX: r.cur_joint_X, motorY: r.cur_joint_Y } : {}),
         paeX: r.pae_joint_X,
         paeY: r.pae_joint_Y,
-        ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+        ...(combined.includes('rssi') ? { rssi: r.nbd } : {}),
         ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
       }
       combinedNNs.forEach((nn, i) => {
         const cr = nn(r.flightTimeMs)
         if (!cr) return
         row[`paeX_${i}`] = cr.pae_joint_X; row[`paeY_${i}`] = cr.pae_joint_Y
-        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.rssi
+        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.nbd
         if (combined.includes('azel')) { row[`az_${i}`] = cr.cur_az; row[`el_${i}`] = cr.cur_el }
         if (combined.includes('motor')) { row[`motorX_${i}`] = cr.cur_joint_X; row[`motorY_${i}`] = cr.cur_joint_Y }
       })
@@ -1511,8 +1511,8 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
   }, [data, combinedLogs])
   const rssiOverlayRange_pae = useMemo(() => {
     let min = Infinity, max = -Infinity
-    for (const r of data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
-    for (const log of combinedLogs) for (const r of log.data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
+    for (const r of data) { if (r.nbd < min) min = r.nbd; if (r.nbd > max) max = r.nbd }
+    for (const log of combinedLogs) for (const r of log.data) { if (r.nbd < min) min = r.nbd; if (r.nbd > max) max = r.nbd }
     return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
   }, [data, combinedLogs])
   const rssiOverlayTicks_pae = useMemo(() => makeRssiTicks(rssiOverlayRange_pae.min, rssiOverlayRange_pae.max), [rssiOverlayRange_pae])
@@ -1598,7 +1598,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
               label={{ value: 'PAE (°)', angle: 0, position: 'insideTopLeft', dy: -26, fontSize: 13 }} />
             {combined.includes('rssi') && (
               <YAxis yAxisId="rssiOverlay" orientation="right" width={60} {...secondaryAxisProps(rssiOverlayDomain_pae, yZoom.level('rssiOverlay'), paeAxis)}
-                tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
                 label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
             )}
             {combined.includes('azel') && (
@@ -1618,7 +1618,7 @@ function PaeFull({ data, currentIndex, combined, combinedLogs, fileName = '' }: 
             )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => {
-                if (name.startsWith('RSSI')) return [rssiToDbm(v).toFixed(2) + ' dBm', name]
+                if (name.startsWith('RSSI')) return [v.toFixed(2) + ' dBm', name]
                 return [v.toFixed(4), name]
               }} />
             {!hiddenLines.includes('paeX') && <Line yAxisId="pae" type="monotone" dataKey="paeX" name="PAE X" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={2} isAnimationActive={false} />}
@@ -1723,14 +1723,14 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
       const row: { t: number; [k: string]: number } = {
         t,
         ...(combined.includes('motor') ? { motorX: r.cur_joint_X, motorY: r.cur_joint_Y } : {}),
-        rssi: r.rssi,
+        rssi: r.nbd,
         ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
         ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
       }
       combinedNNs.forEach((nn, i) => {
         const cr = nn(r.flightTimeMs)
         if (!cr) return
-        row[`rssi_${i}`] = cr.rssi
+        row[`rssi_${i}`] = cr.nbd
         if (combined.includes('pae')) { row[`paeX_${i}`] = cr.pae_joint_X; row[`paeY_${i}`] = cr.pae_joint_Y }
         if (combined.includes('azel')) { row[`az_${i}`] = cr.cur_az; row[`el_${i}`] = cr.cur_el }
         if (combined.includes('motor')) { row[`motorX_${i}`] = cr.cur_joint_X; row[`motorY_${i}`] = cr.cur_joint_Y }
@@ -1746,8 +1746,8 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   const rssiRawRange = useMemo(() => {
     let min = Infinity, max = -Infinity
     const chk = (v: number | undefined) => { if (v != null && Number.isFinite(v)) { if (v < min) min = v; if (v > max) max = v } }
-    for (const r of data) chk(r.rssi)
-    for (const log of combinedLogs) for (const r of log.data) chk(r.rssi)
+    for (const r of data) chk(r.nbd)
+    for (const log of combinedLogs) for (const r of log.data) chk(r.nbd)
     return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
   }, [data, combinedLogs])
   const rssiDomain = useMemo((): [number, number] => {
@@ -1786,7 +1786,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   }, [data, combinedLogs])
   const rssiCombinedChartMargin = useMemo(() => ({ ...FULL_MARGIN, right: FULL_MARGIN.right + rssiCombinedRightWidth }), [rssiCombinedRightWidth])
   const currentTime = useAbsoluteTime ? (data[currentIndex]?.timestamp ?? 0) / 1000 : (data[currentIndex]?.flightTimeMs ?? 0)
-  const currentRssi = data[currentIndex]?.rssi
+  const currentRssi = data[currentIndex]?.nbd
   const motorOverlayDomain_rssi = useMemo(() => paddedRange(data, combinedLogs, pickMotor, 0.1), [data, combinedLogs])
   const yZoom = useYAxisZoom()
   const rssiAxis = scaledRssiAxis(rssiDomain, yZoom.level('rssi'))
@@ -1836,7 +1836,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             <XAxis dataKey="t" type="number" domain={zoomDomain} ticks={timeTicks} allowDataOverflow
               tickFormatter={fmtTick} tick={{ fontSize: 12 }}
               label={{ value: 'Time', position: 'insideBottom', offset: -16, fontSize: 13 }} />
-            <YAxis yAxisId="rssi" orientation="left" domain={rssiAxis.domain} ticks={rssiAxis.ticks} interval={0} allowDataOverflow tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+            <YAxis yAxisId="rssi" orientation="left" domain={rssiAxis.domain} ticks={rssiAxis.ticks} interval={0} allowDataOverflow tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
               label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -26, fontSize: 13 }} />
             {combined.includes('pae') && (
               <YAxis yAxisId="paeOverlay" orientation="right" width={60} {...secondaryAxisProps(paeOverlayDomain_rssi, yZoom.level('paeOverlay'), rssiAxis)}
@@ -1860,7 +1860,7 @@ function RssiFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [
-                name.startsWith('RSSI') ? (rssiToDbm(v).toFixed(2) + ' dBm') : v.toFixed(3),
+                name.startsWith('RSSI') ? (v.toFixed(2) + ' dBm') : v.toFixed(3),
                 name,
               ]} />
             {!hiddenLines.includes('rssi') && <Line yAxisId="rssi" type="monotone" dataKey="rssi" name="RSSI" stroke="#7c3aed" dot={d('#7c3aed')} strokeWidth={2} isAnimationActive={false} />}
@@ -1976,7 +1976,7 @@ function MotorFull({ data, currentIndex, combined, combinedLogs, fileName = '' }
         motorX: r.cur_joint_X,
         motorY: r.cur_joint_Y,
         ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
-        ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+        ...(combined.includes('rssi') ? { rssi: r.nbd } : {}),
         ...(combined.includes('azel') ? { az: r.cur_az, el: r.cur_el } : {}),
       }
       combinedNNs.forEach((nn, i) => {
@@ -1984,7 +1984,7 @@ function MotorFull({ data, currentIndex, combined, combinedLogs, fileName = '' }
         if (!cr) return
         row[`motorX_${i}`] = cr.cur_joint_X; row[`motorY_${i}`] = cr.cur_joint_Y
         if (combined.includes('pae')) { row[`paeX_${i}`] = cr.pae_joint_X; row[`paeY_${i}`] = cr.pae_joint_Y }
-        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.rssi
+        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.nbd
         if (combined.includes('azel')) { row[`az_${i}`] = cr.cur_az; row[`el_${i}`] = cr.cur_el }
       })
       return row
@@ -1997,7 +1997,7 @@ function MotorFull({ data, currentIndex, combined, combinedLogs, fileName = '' }
   }, [allChartData, zoomDomain])
   const motorDomain = useMemo(() => paddedRange(data, combinedLogs, pickMotor, 0.1), [data, combinedLogs])
   const paeOverlayDomain_motor = useMemo(() => paddedRange(data, combinedLogs, (r) => [r.pae_joint_X, r.pae_joint_Y], 0.0001), [data, combinedLogs])
-  const rssiOverlayDomain_motor = useMemo(() => paddedRange(data, combinedLogs, (r) => [r.rssi], 0.1), [data, combinedLogs])
+  const rssiOverlayDomain_motor = useMemo(() => paddedRange(data, combinedLogs, (r) => [r.nbd], 0.1), [data, combinedLogs])
   const azOverlayDomain_motor = useMemo(() => paddedRange(data, combinedLogs, (r) => [r.cur_az], 0.1), [data, combinedLogs])
   const elOverlayDomain_motor = useMemo(() => paddedRange(data, combinedLogs, (r) => [r.cur_el], 0.1), [data, combinedLogs])
   const motorCombinedChartMargin = useMemo(() => ({ ...FULL_MARGIN, right: FULL_MARGIN.right + motorCombinedRightWidth }), [motorCombinedRightWidth])
@@ -2056,7 +2056,7 @@ function MotorFull({ data, currentIndex, combined, combinedLogs, fileName = '' }
             )}
             {combined.includes('rssi') && (
               <YAxis yAxisId="rssiOverlay" orientation="right" width={60} {...secondaryAxisProps(rssiOverlayDomain_motor, yZoom.level('rssiOverlay'), motorAxis)}
-                tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
                 label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
             )}
             {combined.includes('azel') && (
@@ -2071,7 +2071,7 @@ function MotorFull({ data, currentIndex, combined, combinedLogs, fileName = '' }
             )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => [
-                name.startsWith('RSSI') ? (rssiToDbm(v).toFixed(2) + ' dBm') : v.toFixed(3),
+                name.startsWith('RSSI') ? (v.toFixed(2) + ' dBm') : v.toFixed(3),
                 name,
               ]} />
             {!hiddenLines.includes('motorX') && <Line yAxisId="motor" type="monotone" dataKey="motorX" name="Motor X" stroke={MOTOR_X_COLOR} dot={d(MOTOR_X_COLOR)} strokeWidth={2} isAnimationActive={false} />}
@@ -2173,14 +2173,14 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
         az: r.cur_az,
         el: r.cur_el,
         ...(combined.includes('pae') ? { paeX: r.pae_joint_X, paeY: r.pae_joint_Y } : {}),
-        ...(combined.includes('rssi') ? { rssi: r.rssi } : {}),
+        ...(combined.includes('rssi') ? { rssi: r.nbd } : {}),
       }
       combinedNNs.forEach((nn, i) => {
         const cr = nn(r.flightTimeMs)
         if (!cr) return
         row[`az_${i}`] = cr.cur_az; row[`el_${i}`] = cr.cur_el
         if (combined.includes('pae')) { row[`paeX_${i}`] = cr.pae_joint_X; row[`paeY_${i}`] = cr.pae_joint_Y }
-        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.rssi
+        if (combined.includes('rssi')) row[`rssi_${i}`] = cr.nbd
         if (combined.includes('motor')) { row[`motorX_${i}`] = cr.cur_joint_X; row[`motorY_${i}`] = cr.cur_joint_Y }
       })
       return row
@@ -2220,8 +2220,8 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
   }, [data, combinedLogs])
   const rssiOverlayRange_azel = useMemo(() => {
     let min = Infinity, max = -Infinity
-    for (const r of data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
-    for (const log of combinedLogs) for (const r of log.data) { if (r.rssi < min) min = r.rssi; if (r.rssi > max) max = r.rssi }
+    for (const r of data) { if (r.nbd < min) min = r.nbd; if (r.nbd > max) max = r.nbd }
+    for (const log of combinedLogs) for (const r of log.data) { if (r.nbd < min) min = r.nbd; if (r.nbd > max) max = r.nbd }
     return Number.isFinite(min) ? { min, max } : { min: 0, max: 1 }
   }, [data, combinedLogs])
   const rssiOverlayTicks_azel = useMemo(() => makeRssiTicks(rssiOverlayRange_azel.min, rssiOverlayRange_azel.max), [rssiOverlayRange_azel])
@@ -2287,7 +2287,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             )}
             {combined.includes('rssi') && (
               <YAxis yAxisId="rssiOverlay" orientation="right" width={60} {...secondaryAxisProps(rssiOverlayDomain_azel, yZoom.level('rssiOverlay'), azAxis)}
-                tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)} tick={{ fontSize: 12 }}
+                tickFormatter={(v: number) => v.toFixed(1)} tick={{ fontSize: 12 }}
                 label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopRight', dy: -26, fontSize: 13 }} />
             )}
             {combined.includes('motor') && (
@@ -2297,7 +2297,7 @@ function AzElFull({ data, currentIndex, combined, combinedLogs, fileName = '' }:
             )}
             <Tooltip labelFormatter={(v) => fmtTooltip(Number(v))}
               formatter={(v: number, name: string) => {
-                if (name.startsWith('RSSI')) return [rssiToDbm(v).toFixed(2) + ' dBm', name]
+                if (name.startsWith('RSSI')) return [v.toFixed(2) + ' dBm', name]
                 return [v.toFixed(3), name]
               }} />
             {!hiddenLines.includes('az') && <Line yAxisId="az" type="monotone" dataKey="az" name="Azimuth" stroke="#2563eb" dot={d('#2563eb')} strokeWidth={1.5} isAnimationActive={false} />}

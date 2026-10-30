@@ -24,7 +24,6 @@ import {
   sliceByTime,
   makeZoomAwareTimeTicks,
   makeRssiTicks,
-  rssiToDbm,
   getDynamicSample,
 } from '@/lib/timeSeriesChartLayout'
 import { SyncPadRightYAxis } from '@/components/SyncPadRightYAxis'
@@ -50,7 +49,7 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
   const sample = useMemo(() => getDynamicSample(zoomDomain, timeDomain), [zoomDomain, timeDomain])
 
   const allChartData = useMemo(
-    () => data.filter((_, i) => i % sample === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.rssi })),
+    () => data.filter((_, i) => i % sample === 0).map((r) => ({ t: r.flightTimeMs, rssi: r.nbd })),
     [data, sample],
   )
   const chartData = useMemo(() => sliceByTime(allChartData, zoomDomain[0], zoomDomain[1]), [allChartData, zoomDomain])
@@ -75,7 +74,7 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
   }, [rssiTicks])
 
   const currentTime = data[currentIndex]?.flightTimeMs ?? 0
-  const currentRssi = data[currentIndex]?.rssi
+  const currentRssi = data[currentIndex]?.nbd
 
   const tickSz = forPdf ? 22 : 14
   const labelSz = forPdf ? 24 : 16
@@ -108,14 +107,14 @@ function RssiChartInner({ data, currentIndex, height = 360, showHeading = true, 
             width={axisPad}
             domain={rssiDomain}
             ticks={rssiTicks}
-            tickFormatter={(v: number) => rssiToDbm(v).toFixed(1)}
+            tickFormatter={(v: number) => v.toFixed(1)}
             tick={{ fontSize: tickSz }}
             label={{ value: 'RSSI (dBm)', angle: 0, position: 'insideTopLeft', dy: -(labelSz + 13), fontSize: labelSz }}
           />
           <SyncPadRightYAxis />
           <Tooltip
             labelFormatter={(v) => fmtTooltip(Number(v))}
-            formatter={(v: number) => [rssiToDbm(v).toFixed(2) + ' dBm', 'RSSI']}
+            formatter={(v: number) => [v.toFixed(2) + ' dBm', 'RSSI']}
           />
           <Line
             yAxisId="left"

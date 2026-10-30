@@ -15,6 +15,8 @@ export interface SatelliteDataRow {
   cs_target_az: number
   cs_target_el: number
   rssi: number
+  /** NBD signal level (dBm) — read from the log, or derived from raw rssi for older logs */
+  nbd: number
   tx_enable: boolean
   /** milliseconds elapsed since the first row */
   flightTimeMs: number
